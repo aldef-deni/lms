@@ -20,12 +20,12 @@ class PortalController extends Controller
 {
     public function home()
     {
-        return view('home', ['courses' => Course::with('instructor', 'category')->where('status', 'published')->orderByDesc('featured')->latest()->take(3)->get(), 'courseCount' => Course::where('status', 'published')->count(), 'studentCount' => User::where('role', 'student')->count()]);
+        return view('home', ['courses' => Course::with('instructor', 'category')->withCount('lessons', 'enrollments')->where('status', 'published')->orderByDesc('featured')->latest()->take(3)->get(), 'courseCount' => Course::where('status', 'published')->count(), 'studentCount' => User::where('role', 'student')->count()]);
     }
 
     public function catalog(Request $r)
     {
-        $courses = Course::with('instructor', 'category')->where('status', 'published')->when($r->q, fn ($q) => $q->where('title', 'like', '%'.$r->q.'%'))->when($r->category, fn ($q) => $q->where('category_id', $r->category))->when($r->level, fn ($q) => $q->where('level', $r->level))->paginate(12)->withQueryString();
+        $courses = Course::with('instructor', 'category')->withCount('lessons', 'enrollments')->where('status', 'published')->when($r->q, fn ($q) => $q->where('title', 'like', '%'.$r->q.'%'))->when($r->category, fn ($q) => $q->where('category_id', $r->category))->when($r->level, fn ($q) => $q->where('level', $r->level))->orderByDesc('featured')->latest()->paginate(12)->withQueryString();
 
         return view('courses.catalog', compact('courses') + ['categories' => Category::all()]);
     }
@@ -33,9 +33,10 @@ class PortalController extends Controller
     public function course(Course $course)
     {
         abort_unless($course->status === 'published' || auth()->user()?->isAdmin() || auth()->id() === $course->instructor_id, 404);
-        $course->load('sections.lessons', 'instructor', 'category');
+        $course->load('sections.lessons', 'instructor', 'category')->loadCount('lessons', 'enrollments', 'quizzes', 'assignments');
+        $enrollment = auth()->check() ? Enrollment::where('course_id', $course->id)->where('user_id', auth()->id())->first() : null;
 
-        return view('courses.show', compact('course'));
+        return view('courses.show', compact('course', 'enrollment'));
     }
 
     public function dashboard(Request $r)

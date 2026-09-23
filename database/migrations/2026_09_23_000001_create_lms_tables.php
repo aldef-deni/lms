@@ -1,28 +1,201 @@
 <?php
+
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
-return new class extends Migration {
- public function up(): void {
- Schema::table('users', function(Blueprint $t) { $t->string('role')->default('student')->index(); $t->boolean('active')->default(true); $t->text('bio')->nullable(); $t->string('organization')->nullable(); });
- Schema::create('categories', function(Blueprint $t) { $t->id(); $t->foreignId('parent_id')->nullable()->constrained('categories')->nullOnDelete(); $t->string('name'); $t->string('slug')->unique(); $t->text('description')->nullable(); $t->timestamps(); });
- Schema::create('certificate_templates', function(Blueprint $t) { $t->id(); $t->string('name'); $t->string('heading')->default('Certificate of Completion'); $t->text('message')->nullable(); $t->string('accent')->default('#166b60'); $t->string('signatory')->default('ALDEF Academy'); $t->timestamps(); });
- Schema::create('courses', function(Blueprint $t) { $t->id(); $t->foreignId('category_id')->nullable()->constrained()->nullOnDelete(); $t->foreignId('instructor_id')->constrained('users')->restrictOnDelete(); $t->foreignId('certificate_template_id')->nullable()->constrained()->nullOnDelete(); $t->string('title'); $t->string('slug')->unique(); $t->text('description'); $t->text('objectives')->nullable(); $t->text('requirements')->nullable(); $t->text('audience')->nullable(); $t->string('level')->default('beginner'); $t->string('tags')->nullable(); $t->string('thumbnail')->nullable(); $t->string('status')->default('draft')->index(); $t->boolean('featured')->default(false); $t->timestamps(); });
- Schema::create('sections', function(Blueprint $t) { $t->id(); $t->foreignId('course_id')->constrained()->cascadeOnDelete(); $t->string('title'); $t->unsignedInteger('position')->default(0); $t->timestamps(); });
- Schema::create('lessons', function(Blueprint $t) { $t->id(); $t->foreignId('section_id')->constrained()->cascadeOnDelete(); $t->string('title'); $t->string('type')->default('text'); $t->longText('content')->nullable(); $t->text('url')->nullable(); $t->string('attachment')->nullable(); $t->unsignedInteger('duration')->default(0); $t->unsignedInteger('position')->default(0); $t->boolean('preview')->default(false); $t->timestamps(); });
- Schema::create('enrollments', function(Blueprint $t) { $t->id(); $t->foreignId('user_id')->constrained()->cascadeOnDelete(); $t->foreignId('course_id')->constrained()->cascadeOnDelete(); $t->string('status')->default('active'); $t->foreignId('last_lesson_id')->nullable()->constrained('lessons')->nullOnDelete(); $t->timestamp('completed_at')->nullable(); $t->timestamps(); $t->unique(['user_id','course_id']); });
- Schema::create('lesson_completions', function(Blueprint $t) { $t->id(); $t->foreignId('enrollment_id')->constrained()->cascadeOnDelete(); $t->foreignId('lesson_id')->constrained()->cascadeOnDelete(); $t->timestamp('completed_at'); $t->unique(['enrollment_id','lesson_id']); });
- Schema::create('quizzes', function(Blueprint $t) { $t->id(); $t->foreignId('course_id')->constrained()->cascadeOnDelete(); $t->foreignId('lesson_id')->nullable()->constrained()->nullOnDelete(); $t->string('title'); $t->string('type')->default('quiz'); $t->unsignedInteger('passing_grade')->default(70); $t->unsignedInteger('time_limit')->nullable(); $t->unsignedInteger('max_attempts')->default(3); $t->boolean('required')->default(true); $t->timestamps(); });
- Schema::create('questions', function(Blueprint $t) { $t->id(); $t->foreignId('quiz_id')->constrained()->cascadeOnDelete(); $t->text('prompt'); $t->string('type')->default('multiple_choice'); $t->json('options')->nullable(); $t->text('answer'); $t->unsignedInteger('points')->default(1); $t->timestamps(); });
- Schema::create('quiz_attempts', function(Blueprint $t) { $t->id(); $t->foreignId('quiz_id')->constrained()->cascadeOnDelete(); $t->foreignId('user_id')->constrained()->cascadeOnDelete(); $t->json('answers')->nullable(); $t->decimal('score',5,2)->nullable(); $t->boolean('passed')->default(false); $t->timestamp('started_at'); $t->timestamp('submitted_at')->nullable(); $t->timestamps(); });
- Schema::create('assignments', function(Blueprint $t) { $t->id(); $t->foreignId('course_id')->constrained()->cascadeOnDelete(); $t->string('title'); $t->text('instructions'); $t->timestamp('due_at')->nullable(); $t->boolean('required')->default(false); $t->timestamps(); });
- Schema::create('submissions', function(Blueprint $t) { $t->id(); $t->foreignId('assignment_id')->constrained()->cascadeOnDelete(); $t->foreignId('user_id')->constrained()->cascadeOnDelete(); $t->string('file')->nullable(); $t->text('notes')->nullable(); $t->unsignedInteger('grade')->nullable(); $t->text('feedback')->nullable(); $t->string('status')->default('submitted'); $t->timestamps(); $t->unique(['assignment_id','user_id']); });
- Schema::create('certificates', function(Blueprint $t) { $t->id(); $t->foreignId('enrollment_id')->unique()->constrained()->restrictOnDelete(); $t->string('number')->unique(); $t->uuid('verification_token')->unique(); $t->string('student_name'); $t->string('course_title'); $t->string('instructor_name'); $t->timestamp('completed_at'); $t->timestamp('issued_at'); $t->timestamp('revoked_at')->nullable(); $t->timestamps(); });
- Schema::create('announcements', function(Blueprint $t) { $t->id(); $t->foreignId('course_id')->nullable()->constrained()->cascadeOnDelete(); $t->foreignId('user_id')->constrained()->cascadeOnDelete(); $t->string('title'); $t->text('body'); $t->timestamps(); });
- Schema::create('discussions', function(Blueprint $t) { $t->id(); $t->foreignId('course_id')->constrained()->cascadeOnDelete(); $t->foreignId('user_id')->constrained()->cascadeOnDelete(); $t->foreignId('parent_id')->nullable()->constrained('discussions')->cascadeOnDelete(); $t->text('body'); $t->timestamps(); });
- Schema::create('settings', function(Blueprint $t) { $t->id(); $t->string('key')->unique(); $t->text('value')->nullable(); $t->timestamps(); });
- Schema::create('activity_logs', function(Blueprint $t) { $t->id(); $t->foreignId('user_id')->nullable()->constrained()->nullOnDelete(); $t->string('action'); $t->string('subject'); $t->timestamps(); });
- Schema::create('notifications', function(Blueprint $t) { $t->uuid('id')->primary(); $t->string('type'); $t->morphs('notifiable'); $t->text('data'); $t->timestamp('read_at')->nullable(); $t->timestamps(); });
- }
- public function down(): void { foreach(['notifications','activity_logs','settings','discussions','announcements','certificates','submissions','assignments','quiz_attempts','questions','quizzes','lesson_completions','enrollments','lessons','sections','courses','certificate_templates','categories'] as $table) Schema::dropIfExists($table); Schema::table('users',fn(Blueprint $t)=>$t->dropColumn(['role','active','bio','organization'])); }
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::table('users', function (Blueprint $t) {
+            $t->string('role')->default('student')->index();
+            $t->boolean('active')->default(true);
+            $t->text('bio')->nullable();
+            $t->string('organization')->nullable();
+        });
+        Schema::create('categories', function (Blueprint $t) {
+            $t->id();
+            $t->foreignId('parent_id')->nullable()->constrained('categories')->nullOnDelete();
+            $t->string('name');
+            $t->string('slug')->unique();
+            $t->text('description')->nullable();
+            $t->timestamps();
+        });
+        Schema::create('certificate_templates', function (Blueprint $t) {
+            $t->id();
+            $t->string('name');
+            $t->string('heading')->default('Certificate of Completion');
+            $t->text('message')->nullable();
+            $t->string('accent')->default('#166b60');
+            $t->string('signatory')->default('ALDEF Academy');
+            $t->timestamps();
+        });
+        Schema::create('courses', function (Blueprint $t) {
+            $t->id();
+            $t->foreignId('category_id')->nullable()->constrained()->nullOnDelete();
+            $t->foreignId('instructor_id')->constrained('users')->restrictOnDelete();
+            $t->foreignId('certificate_template_id')->nullable()->constrained()->nullOnDelete();
+            $t->string('title');
+            $t->string('slug')->unique();
+            $t->text('description');
+            $t->text('objectives')->nullable();
+            $t->text('requirements')->nullable();
+            $t->text('audience')->nullable();
+            $t->string('level')->default('beginner');
+            $t->string('tags')->nullable();
+            $t->string('thumbnail')->nullable();
+            $t->string('status')->default('draft')->index();
+            $t->boolean('featured')->default(false);
+            $t->timestamps();
+        });
+        Schema::create('sections', function (Blueprint $t) {
+            $t->id();
+            $t->foreignId('course_id')->constrained()->cascadeOnDelete();
+            $t->string('title');
+            $t->unsignedInteger('position')->default(0);
+            $t->timestamps();
+        });
+        Schema::create('lessons', function (Blueprint $t) {
+            $t->id();
+            $t->foreignId('section_id')->constrained()->cascadeOnDelete();
+            $t->string('title');
+            $t->string('type')->default('text');
+            $t->longText('content')->nullable();
+            $t->text('url')->nullable();
+            $t->string('attachment')->nullable();
+            $t->unsignedInteger('duration')->default(0);
+            $t->unsignedInteger('position')->default(0);
+            $t->boolean('preview')->default(false);
+            $t->timestamps();
+        });
+        Schema::create('enrollments', function (Blueprint $t) {
+            $t->id();
+            $t->foreignId('user_id')->constrained()->cascadeOnDelete();
+            $t->foreignId('course_id')->constrained()->cascadeOnDelete();
+            $t->string('status')->default('active');
+            $t->foreignId('last_lesson_id')->nullable()->constrained('lessons')->nullOnDelete();
+            $t->timestamp('completed_at')->nullable();
+            $t->timestamps();
+            $t->unique(['user_id', 'course_id']);
+        });
+        Schema::create('lesson_completions', function (Blueprint $t) {
+            $t->id();
+            $t->foreignId('enrollment_id')->constrained()->cascadeOnDelete();
+            $t->foreignId('lesson_id')->constrained()->cascadeOnDelete();
+            $t->timestamp('completed_at');
+            $t->unique(['enrollment_id', 'lesson_id']);
+        });
+        Schema::create('quizzes', function (Blueprint $t) {
+            $t->id();
+            $t->foreignId('course_id')->constrained()->cascadeOnDelete();
+            $t->foreignId('lesson_id')->nullable()->constrained()->nullOnDelete();
+            $t->string('title');
+            $t->string('type')->default('quiz');
+            $t->unsignedInteger('passing_grade')->default(70);
+            $t->unsignedInteger('time_limit')->nullable();
+            $t->unsignedInteger('max_attempts')->default(3);
+            $t->boolean('required')->default(true);
+            $t->timestamps();
+        });
+        Schema::create('questions', function (Blueprint $t) {
+            $t->id();
+            $t->foreignId('quiz_id')->constrained()->cascadeOnDelete();
+            $t->text('prompt');
+            $t->string('type')->default('multiple_choice');
+            $t->json('options')->nullable();
+            $t->text('answer');
+            $t->unsignedInteger('points')->default(1);
+            $t->timestamps();
+        });
+        Schema::create('quiz_attempts', function (Blueprint $t) {
+            $t->id();
+            $t->foreignId('quiz_id')->constrained()->cascadeOnDelete();
+            $t->foreignId('user_id')->constrained()->cascadeOnDelete();
+            $t->json('answers')->nullable();
+            $t->decimal('score', 5, 2)->nullable();
+            $t->boolean('passed')->default(false);
+            $t->timestamp('started_at');
+            $t->timestamp('submitted_at')->nullable();
+            $t->timestamps();
+        });
+        Schema::create('assignments', function (Blueprint $t) {
+            $t->id();
+            $t->foreignId('course_id')->constrained()->cascadeOnDelete();
+            $t->string('title');
+            $t->text('instructions');
+            $t->timestamp('due_at')->nullable();
+            $t->boolean('required')->default(false);
+            $t->timestamps();
+        });
+        Schema::create('submissions', function (Blueprint $t) {
+            $t->id();
+            $t->foreignId('assignment_id')->constrained()->cascadeOnDelete();
+            $t->foreignId('user_id')->constrained()->cascadeOnDelete();
+            $t->string('file')->nullable();
+            $t->text('notes')->nullable();
+            $t->unsignedInteger('grade')->nullable();
+            $t->text('feedback')->nullable();
+            $t->string('status')->default('submitted');
+            $t->timestamps();
+            $t->unique(['assignment_id', 'user_id']);
+        });
+        Schema::create('certificates', function (Blueprint $t) {
+            $t->id();
+            $t->foreignId('enrollment_id')->unique()->constrained()->restrictOnDelete();
+            $t->string('number')->unique();
+            $t->uuid('verification_token')->unique();
+            $t->string('student_name');
+            $t->string('course_title');
+            $t->string('instructor_name');
+            $t->timestamp('completed_at');
+            $t->timestamp('issued_at');
+            $t->timestamp('revoked_at')->nullable();
+            $t->timestamps();
+        });
+        Schema::create('announcements', function (Blueprint $t) {
+            $t->id();
+            $t->foreignId('course_id')->nullable()->constrained()->cascadeOnDelete();
+            $t->foreignId('user_id')->constrained()->cascadeOnDelete();
+            $t->string('title');
+            $t->text('body');
+            $t->timestamps();
+        });
+        Schema::create('discussions', function (Blueprint $t) {
+            $t->id();
+            $t->foreignId('course_id')->constrained()->cascadeOnDelete();
+            $t->foreignId('user_id')->constrained()->cascadeOnDelete();
+            $t->foreignId('parent_id')->nullable()->constrained('discussions')->cascadeOnDelete();
+            $t->text('body');
+            $t->timestamps();
+        });
+        Schema::create('settings', function (Blueprint $t) {
+            $t->id();
+            $t->string('key')->unique();
+            $t->text('value')->nullable();
+            $t->timestamps();
+        });
+        Schema::create('activity_logs', function (Blueprint $t) {
+            $t->id();
+            $t->foreignId('user_id')->nullable()->constrained()->nullOnDelete();
+            $t->string('action');
+            $t->string('subject');
+            $t->timestamps();
+        });
+        Schema::create('notifications', function (Blueprint $t) {
+            $t->uuid('id')->primary();
+            $t->string('type');
+            $t->morphs('notifiable');
+            $t->text('data');
+            $t->timestamp('read_at')->nullable();
+            $t->timestamps();
+        });
+    }
+
+    public function down(): void
+    {
+        foreach (['notifications', 'activity_logs', 'settings', 'discussions', 'announcements', 'certificates', 'submissions', 'assignments', 'quiz_attempts', 'questions', 'quizzes', 'lesson_completions', 'enrollments', 'lessons', 'sections', 'courses', 'certificate_templates', 'categories'] as $table) {
+            Schema::dropIfExists($table);
+        } Schema::table('users', fn (Blueprint $t) => $t->dropColumn(['role', 'active', 'bio', 'organization']));
+    }
 };

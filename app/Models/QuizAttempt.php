@@ -8,7 +8,7 @@ class QuizAttempt extends Model
 {
     protected $guarded = ['id'];
 
-    protected $casts = ['answers' => 'array', 'started_at' => 'datetime', 'submitted_at' => 'datetime', 'passed' => 'boolean'];
+    protected $casts = ['answers' => 'array', 'question_scores' => 'array', 'started_at' => 'datetime', 'submitted_at' => 'datetime', 'passed' => 'boolean'];
 
     public function quiz()
     {

@@ -109,7 +109,7 @@ class LearningController extends Controller
     {
         abort_unless($attempt->user_id === auth()->id(), 403);
         $e = $this->enrollment($attempt->quiz->course);
-        $data = $r->validate(['answers' => 'nullable|array', 'answers.*' => 'nullable|string|max:2000']);
+        $data = $r->validate(['answers' => 'nullable|array', 'answers.*' => 'nullable|string|max:10000']);
         DB::transaction(function () use ($attempt, $data) {
             $attempt = QuizAttempt::whereKey($attempt->id)->lockForUpdate()->firstOrFail();
             abort_if($attempt->submitted_at, 422, 'Already submitted.');
@@ -118,16 +118,26 @@ class LearningController extends Controller
             $earned = 0;
             $total = 0;
             $answers = [];
+            $questionScores = [];
+            $needsGrading = false;
             foreach ($quiz->questions as $question) {
                 $total += $question->points;
                 $answer = (string) ($data['answers'][$question->id] ?? '');
                 $answers[$question->id] = $answer;
-                if (! $expired && mb_strtolower(trim($answer)) === mb_strtolower(trim($question->answer))) {
+                if ($expired) {
+                    $questionScores[$question->id] = 0;
+                } elseif ($question->type === 'essay') {
+                    $questionScores[$question->id] = null;
+                    $needsGrading = true;
+                } elseif (mb_strtolower(trim($answer)) === mb_strtolower(trim($question->answer))) {
                     $earned += $question->points;
+                    $questionScores[$question->id] = $question->points;
+                } else {
+                    $questionScores[$question->id] = 0;
                 }
             }
-            $score = $total ? round($earned / $total * 100, 2) : 0;
-            $attempt->update(['answers' => $answers, 'score' => $score, 'passed' => ! $expired && $total > 0 && $score >= $quiz->passing_grade, 'submitted_at' => now()]);
+            $score = $needsGrading ? null : ($total ? round($earned / $total * 100, 2) : 0);
+            $attempt->update(['answers' => $answers, 'question_scores' => $questionScores, 'score' => $score, 'passed' => ! $needsGrading && ! $expired && $total > 0 && $score >= $quiz->passing_grade, 'grading_status' => $needsGrading ? 'pending' : 'graded', 'submitted_at' => now()]);
         });
         $service->refresh($e);
 

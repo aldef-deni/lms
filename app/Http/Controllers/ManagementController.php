@@ -10,6 +10,7 @@ use App\Models\Enrollment;
 use App\Models\Lesson;
 use App\Models\Organization;
 use App\Models\Quiz;
+use App\Models\QuizAttempt;
 use App\Models\Section;
 use App\Models\Setting;
 use App\Models\Submission;
@@ -18,6 +19,8 @@ use App\Services\LearningService;
 use App\Services\ManagementResources;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
 class ManagementController extends Controller
@@ -127,8 +130,8 @@ class ManagementController extends Controller
                 'sections' => ['position' => 0],
                 'lessons' => ['type' => 'text', 'position' => 0, 'duration' => 10, 'preview' => false],
                 'quizzes' => ['passing_grade' => 70, 'max_attempts' => 3, 'required' => true, 'type' => 'quiz'],
-                'questions' => ['points' => 1, 'type' => 'multiple_choice'],
-                'certificate-templates' => ['heading' => 'Certificate of Completion', 'accent' => '#5653d9', 'signatory' => 'ALDEF Academy'],
+                'questions' => ['points' => 1, 'type' => 'multiple_choice', 'media_type' => 'text'],
+                'certificate-templates' => ['heading' => 'Certificate of Completion', 'accent' => '#5653d9', 'signatory' => 'ALDEF Academy', 'signature_mode' => 'upload'],
                 default => [],
             });
         }
@@ -218,9 +221,28 @@ class ManagementController extends Controller
             $quiz = Quiz::findOrFail($data['quiz_id']);
             $this->courseAccess($quiz->course_id);
             abort_if($quiz->attempts()->exists(), 422, 'Questions cannot change after an assessment has started. Create a new assessment instead.');
-            $data['options'] = $data['type'] === 'true_false' ? ['True', 'False'] : array_values(array_filter(array_map('trim', preg_split('/\r?\n/', $data['options'] ?? '')), fn ($option) => $option !== ''));
-            if ($data['type'] !== 'short_answer') {
-                abort_unless(count($data['options']) >= 2 && in_array($data['answer'], $data['options'], true), 422, 'Provide at least two options and an answer matching one option exactly.');
+            if ($data['type'] === 'multiple_choice') {
+                $data['options'] = array_values(array_filter(array_map('trim', preg_split('/\r?\n/', $data['options'] ?? '')), fn ($option) => $option !== ''));
+                abort_unless(count($data['options']) >= 2 && in_array($data['answer'] ?? null, $data['options'], true), 422, 'Provide at least two options and an answer matching one option exactly.');
+            } else {
+                $data['options'] = null;
+                $data['answer'] = $data['answer'] ?? '';
+            }
+            if ($data['media_type'] === 'image') {
+                $existingMedia = $record->media_type === 'image' ? $record->media_path : null;
+                abort_unless($r->hasFile('media_path') || $existingMedia, 422, 'Upload an image for this question.');
+                abort_if($r->hasFile('media_path') && ! str_starts_with((string) $r->file('media_path')->getMimeType(), 'image/'), 422, 'Image questions require an image file.');
+                $data['media_url'] = null;
+            } elseif ($data['media_type'] === 'video') {
+                $existingMedia = $record->media_type === 'video' ? $record->media_path : null;
+                abort_unless($r->hasFile('media_path') || filled($data['media_url'] ?? null) || $existingMedia, 422, 'Upload a video or provide a YouTube/Vimeo URL.');
+                abort_if($r->hasFile('media_path') && ! str_starts_with((string) $r->file('media_path')->getMimeType(), 'video/'), 422, 'Video questions require a video file.');
+                if (filled($data['media_url'] ?? null)) {
+                    $host = strtolower((string) parse_url($data['media_url'], PHP_URL_HOST));
+                    abort_unless(in_array($host, ['youtube.com', 'www.youtube.com', 'youtu.be', 'vimeo.com', 'www.vimeo.com', 'player.vimeo.com']), 422, 'Video URL must use YouTube or Vimeo.');
+                }
+            } else {
+                $data['media_url'] = null;
             }
         }
         if ($resource === 'enrollments') {
@@ -241,15 +263,36 @@ class ManagementController extends Controller
                 $parent = $parent->parent;
             }
         }
-        foreach (['thumbnail', 'attachment'] as $field) {
+        foreach (['thumbnail', 'attachment', 'media_path', 'background_image', 'signature_image'] as $field) {
             if (! array_key_exists($field, $rules)) {
                 continue;
             }
             if ($r->hasFile($field)) {
-                $data[$field] = $r->file($field)->store($field === 'thumbnail' ? 'thumbnails' : 'materials', $field === 'thumbnail' ? 'public' : 'local');
+                [$directory, $disk] = match ($field) {
+                    'thumbnail' => ['thumbnails', 'public'],
+                    'attachment' => ['materials', 'local'],
+                    'media_path' => ['questions', 'public'],
+                    'background_image' => ['certificates/backgrounds', 'public'],
+                    'signature_image' => ['certificates/signatures', 'public'],
+                };
+                $data[$field] = $r->file($field)->store($directory, $disk);
             } else {
                 unset($data[$field]);
             }
+        }
+        if ($resource === 'certificate-templates') {
+            $signatureData = $data['signature_data'] ?? null;
+            unset($data['signature_data']);
+            if ($data['signature_mode'] === 'draw' && $signatureData) {
+                abort_unless(preg_match('/^data:image\/png;base64,([A-Za-z0-9+\/=]+)$/', $signatureData, $matches), 422, 'The drawn signature is invalid.');
+                $signature = base64_decode($matches[1], true);
+                abort_unless($signature !== false && strlen($signature) <= 750000, 422, 'The drawn signature is too large.');
+                $path = 'certificates/signatures/'.Str::uuid().'.png';
+                Storage::disk('public')->put($path, $signature);
+                $data['signature_image'] = $path;
+            }
+            abort_if($data['signature_mode'] === 'draw' && empty($data['signature_image']) && ! $record->signature_image, 422, 'Draw a signature before saving.');
+            abort_if($data['signature_mode'] === 'upload' && empty($data['signature_image']) && ! $record->signature_image, 422, 'Upload a signature image before saving.');
         }
         DB::transaction(function () use ($record, $data, $resource) {
             $record->fill($data)->save();
@@ -302,8 +345,11 @@ class ManagementController extends Controller
     {
         abort_unless(auth()->user()->canTeach(), 403);
         $submissions = Submission::with('user', 'assignment.course')->when(! auth()->user()->isAdmin(), fn ($q) => $q->whereHas('assignment.course', fn ($q) => $q->where('instructor_id', auth()->id())))->latest()->paginate(20);
+        $essayAttempts = QuizAttempt::with('user', 'quiz.course', 'quiz.questions')->where('grading_status', 'pending')
+            ->when(! auth()->user()->isAdmin(), fn ($q) => $q->whereHas('quiz.course', fn ($q) => $q->where('instructor_id', auth()->id())))
+            ->latest()->paginate(10, ['*'], 'essay_page');
 
-        return view('admin.submissions', compact('submissions'));
+        return view('admin.submissions', compact('submissions', 'essayAttempts'));
     }
 
     public function grade(Request $r, Submission $submission, LearningService $learning)
@@ -319,6 +365,34 @@ class ManagementController extends Controller
         ActivityLog::create(['user_id' => auth()->id(), 'action' => 'Graded submission', 'subject' => (string) $submission->id]);
 
         return back()->with('success', 'Grade and feedback saved.');
+    }
+
+    public function gradeEssay(Request $r, QuizAttempt $attempt, LearningService $learning)
+    {
+        abort_unless($r->user()->canTeach(), 403);
+        $this->courseAccess($attempt->quiz->course_id);
+        abort_unless($attempt->submitted_at && $attempt->grading_status === 'pending', 422, 'This attempt is not awaiting essay grading.');
+        $essayQuestions = $attempt->quiz->questions->where('type', 'essay');
+        $rules = ['scores' => 'required|array', 'feedback' => 'nullable|string|max:10000'];
+        foreach ($essayQuestions as $question) {
+            $rules['scores.'.$question->id] = 'required|integer|min:0|max:'.$question->points;
+        }
+        $data = $r->validate($rules);
+        $scores = $attempt->question_scores ?? [];
+        foreach ($essayQuestions as $question) {
+            $scores[$question->id] = (int) $data['scores'][$question->id];
+        }
+        $total = $attempt->quiz->questions->sum('points');
+        $earned = collect($scores)->sum(fn ($score) => (int) $score);
+        $score = $total ? round($earned / $total * 100, 2) : 0;
+        $attempt->update(['question_scores' => $scores, 'score' => $score, 'passed' => $score >= $attempt->quiz->passing_grade, 'grading_status' => 'graded', 'feedback' => $data['feedback'] ?? null]);
+        $enrollment = Enrollment::where('user_id', $attempt->user_id)->where('course_id', $attempt->quiz->course_id)->first();
+        if ($enrollment) {
+            $learning->refresh($enrollment);
+        }
+        ActivityLog::create(['user_id' => auth()->id(), 'action' => 'Graded essay attempt', 'subject' => (string) $attempt->id]);
+
+        return back()->with('success', 'Essay score and feedback saved.');
     }
 
     public function settings()

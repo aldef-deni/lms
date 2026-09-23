@@ -12,6 +12,7 @@ use App\Models\Enrollment;
 use App\Models\Lesson;
 use App\Models\LessonCompletion;
 use App\Models\Quiz;
+use App\Models\QuizAttempt;
 use App\Models\Submission;
 use App\Models\User;
 use Illuminate\Http\Request;
@@ -80,7 +81,8 @@ class PortalController extends Controller
         $managedCourses = $u->canTeach() ? (clone $courses)->withCount('enrollments', 'lessons')->latest()->take(6)->get() : collect();
         $activities = $u->isAdmin() ? ActivityLog::with('user')->latest()->take(6)->get() : collect();
         $deadlines = Assignment::whereIn('course_id', $enrollments->pluck('course_id'))->where('due_at', '>=', now())->orderBy('due_at')->take(5)->get();
-        $pending = $u->canTeach() ? Submission::whereHas('assignment', fn ($q) => $q->whereIn('course_id', $courses->pluck('id')))->where('status', 'submitted')->count() : 0;
+        $pending = $u->canTeach() ? Submission::whereHas('assignment', fn ($q) => $q->whereIn('course_id', $courses->pluck('id')))->where('status', 'submitted')->count()
+            + QuizAttempt::whereHas('quiz', fn ($q) => $q->whereIn('course_id', $courses->pluck('id')))->where('grading_status', 'pending')->count() : 0;
 
         $summary = [];
         $growth = collect();

@@ -110,7 +110,7 @@ class DatabaseSeeder extends Seeder
                 $prompt = ['Which technology describes the content of a web page?', 'What should guide a useful interface design?', 'What helps a team work toward a shared goal?'][$index];
                 $options = [['HTML', 'CSS', 'A database'], ['User needs', 'Decoration alone', 'The longest possible form'], ['Clear expectations', 'Unclear ownership', 'Avoiding feedback']][$index];
                 Question::firstOrCreate(['quiz_id' => $quiz->id, 'prompt' => $prompt], ['type' => 'multiple_choice', 'options' => $options, 'answer' => $options[0], 'points' => 1]);
-                Question::firstOrCreate(['quiz_id' => $quiz->id, 'prompt' => 'Reflection and practice help turn learning into usable skills.'], ['type' => 'true_false', 'options' => ['True', 'False'], 'answer' => 'True', 'points' => 1]);
+                Question::firstOrCreate(['quiz_id' => $quiz->id, 'prompt' => 'Reflection and practice help turn learning into usable skills.'], ['type' => 'multiple_choice', 'options' => ['True', 'False'], 'answer' => 'True', 'points' => 1]);
                 $assignment = Assignment::firstOrCreate(['course_id' => $course->id, 'title' => 'Your practical learning reflection'], ['instructions' => 'Describe one idea you learned, share a small practical example, and explain what you would improve next. Submit notes or a document.', 'required' => false]);
                 $enrollment = Enrollment::firstOrCreate(['user_id' => $student->id, 'course_id' => $course->id]);
                 if ($index === 0) {

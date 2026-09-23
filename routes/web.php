@@ -45,6 +45,7 @@ Route::middleware(['auth', ActiveUser::class])->group(function () {
     });
     Route::get('/submissions', [ManagementController::class, 'submissions']);
     Route::put('/submissions/{submission}', [ManagementController::class, 'grade']);
+    Route::put('/attempts/{attempt}/grade', [ManagementController::class, 'gradeEssay']);
     Route::get('/submissions/{submission}/file', [LearningController::class, 'submissionFile']);
     Route::get('/manage/{resource}', [ManagementController::class, 'index']);
     Route::get('/manage/{resource}/create', [ManagementController::class, 'form']);

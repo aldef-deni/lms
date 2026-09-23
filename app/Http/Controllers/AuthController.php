@@ -19,7 +19,20 @@ class AuthController extends Controller
         $field = filter_var($data['login'], FILTER_VALIDATE_EMAIL) ? 'email' : 'username';
         if (! Auth::attempt([$field => $data['login'], 'password' => $data['password'], 'active' => true], $r->boolean('remember'))) {
             return back()->withErrors(['login' => 'Username/email atau password salah, atau akun tidak aktif.'])->onlyInput('login');
-        } $r->session()->regenerate();
+        }
+
+        $managementPortal = $r->routeIs('management.login.submit');
+        $allowedRoles = $managementPortal ? ['super_admin', 'admin', 'corporate'] : ['instructor', 'student'];
+        if (! in_array($r->user()->role, $allowedRoles, true)) {
+            Auth::logout();
+            $r->session()->invalidate();
+            $r->session()->regenerateToken();
+
+            return redirect()->route($managementPortal ? 'management.login' : 'login')->withErrors(['login' => $managementPortal
+                ? 'Portal ini khusus Super Admin, Admin LMS, dan Corporate Admin.'
+                : 'Portal ini khusus Instructor dan Student. Gunakan portal pengelola untuk akun administrator.'])->onlyInput('login');
+        }
+        $r->session()->regenerate();
 
         return redirect($r->user()->dashboardPath());
     }

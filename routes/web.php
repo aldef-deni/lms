@@ -15,8 +15,10 @@ Route::get('/courses/{course:slug}', [PortalController::class, 'course'])->name(
 Route::get('/preview/{lesson}', [LearningController::class, 'preview']);
 Route::get('/verify/{token?}', [CertificateController::class, 'verify'])->name('verify')->middleware('throttle:60,1');
 Route::middleware('guest')->group(function () {
-    Route::view('/login', 'auth.login')->name('login');
-    Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:6,1');
+    Route::get('/login', fn () => view('auth.login', ['portal' => 'learning']))->name('login');
+    Route::post('/login', [AuthController::class, 'login'])->name('login.submit')->middleware('throttle:6,1');
+    Route::get('/kelola', fn () => view('auth.login', ['portal' => 'management']))->name('management.login');
+    Route::post('/kelola', [AuthController::class, 'login'])->name('management.login.submit')->middleware('throttle:6,1');
     Route::view('/register', 'auth.register')->name('register');
     Route::post('/register', [AuthController::class, 'register'])->middleware('throttle:5,1');
     Route::view('/forgot-password', 'auth.forgot')->name('password.request');

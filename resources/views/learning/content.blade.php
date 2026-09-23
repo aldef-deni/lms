@@ -1,0 +1,8 @@
+@if($lesson)
+<div class="row between wrap" style="margin-bottom:22px"><span class="badge">{{ ucfirst($lesson->type) }} lesson</span><small>{{ $lesson->duration }} min</small></div><h1 style="font-size:27px;margin-bottom:25px">{{ $lesson->title }}</h1>
+@if($lesson->type==='embed' && $lesson->url && in_array(parse_url($lesson->url,PHP_URL_HOST),['www.youtube.com','www.youtube-nocookie.com','player.vimeo.com']))<iframe src="{{ $lesson->url }}" title="{{ $lesson->title }}" style="width:100%;aspect-ratio:16/9;border:0;border-radius:12px;margin-bottom:24px" allow="fullscreen; picture-in-picture" allowfullscreen referrerpolicy="strict-origin-when-cross-origin" sandbox="allow-scripts allow-same-origin allow-presentation"></iframe>
+@elseif($lesson->type==='video' && $lesson->url)<video controls preload="metadata" style="width:100%;border-radius:12px;margin-bottom:24px" src="{{ $lesson->url }}">Your browser does not support this video.</video>
+@elseif(in_array($lesson->type,['external','live','document']) && $lesson->url)<div style="margin-bottom:25px"><a class="btn secondary" href="{{ $lesson->url }}" target="_blank" rel="noopener noreferrer">{{ $lesson->type==='live'?'Join live session':'Open learning resource' }} ↗</a></div>@endif
+@if($lesson->content)<div class="lesson-body">{{ $lesson->content }}</div>@endif
+@if($lesson->attachment)<div class="divider"></div>@auth<a class="link" href="/lessons/{{ $lesson->id }}/material">Download lesson material ↓</a>@else<p class="muted"><a class="link" href="/login">Sign in</a> to download the material.</p>@endauth @endif
+@else<div class="empty"><strong>Your course is getting ready.</strong>Lessons will appear here soon.</div>@endif

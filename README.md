@@ -1,59 +1,71 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# ALDEF LMS
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+A Laravel 12 learning management system for **lms.aldeftech.com**, built with Blade, Tailwind CSS, native Laravel authentication, MySQL relationships, and Aldef Tech branding.
 
-## About Laravel
+## Included workflows
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+- Public academy, searchable course catalog, course outlines and preview lessons.
+- Login, registration, password reset, profiles, password changes, active-account enforcement and rate limiting.
+- Super Admin, Admin LMS, Instructor, Student and Organization roles. Registration always creates a Student. Administrators manage users; only Super Admin can assign administrative roles or change system settings. Instructors can manage only their own content.
+- Categories/subcategories, course metadata and thumbnails, chapters, ordered lessons, private attachments, video, safe-provider embeds, documents, links and live meeting links.
+- Student and administrative enrollments, lesson/chapter progress, resume learning and course completion.
+- Question bank, course/lesson quizzes and exams, server-enforced time limits, attempt limits, score history, multiple choice, true/false and case-insensitive exact-match short answers.
+- Assignment uploads, deadlines, mentor grading and feedback. Required assignments need a grade of at least 70 for certification.
+- Automatic certificates after all lessons and required assessments are completed. Unique certificate numbers, public verification, local QR generation, landscape PDF downloads, configurable templates and revocation.
+- Announcements, course discussions/replies, role-aware reports, system settings and administrative activity logs. Laravel database notifications schema is ready for future event-specific notifications.
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+## Installation / deployment
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+Serve **only the `public/` directory** through aaPanel. PHP 8.2+ and Node 20.19+ (or 22.12+) are required. Enable the standard Laravel PHP extensions plus DOM/XML, mbstring and GD for PDF/image handling.
 
-## Learning Laravel
+```sh
+composer install --no-dev --optimize-autoloader
+npm ci
+npm run build
+php artisan migrate --force
+php artisan db:seed --force
+php artisan storage:link
+php artisan optimize
+```
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework. You can also check out [Laravel Learn](https://laravel.com/learn), where you will be guided through building a modern Laravel application.
+Keep the existing `.env` and `APP_KEY`. Configure `APP_NAME="ALDEF LMS"`, `APP_URL=https://lms.aldeftech.com`, `APP_ENV=production`, `APP_DEBUG=false`, MySQL credentials and HTTPS session cookies. Configure a real mail transport for password reset delivery. The log mailer is useful for development only. Keep `storage/` and `bootstrap/cache/` writable by the PHP service account, and restrict `.env` access.
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+### Account provisioning
 
-## Laravel Sponsors
+Set these private environment variables before seeding:
 
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
+```dotenv
+LMS_ADMIN_EMAIL=admin@aldeftech.com
+LMS_ADMIN_PASSWORD=<unique password of at least 12 characters>
+LMS_DEMO_PASSWORD=<optional unique password of at least 12 characters>
+```
 
-### Premium Partners
+The main seeder creates accounts only when the corresponding password is provided. Rerunning it preserves existing passwords and records. There is no publicly known default password. Run `php artisan config:clear` after changing provisioning variables, then `php artisan db:seed --force`.
 
-- **[Vehikl](https://vehikl.com)**
-- **[Tighten Co.](https://tighten.co)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel)**
-- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
-- **[Redberry](https://redberry.international/laravel-development)**
-- **[Active Logic](https://activelogic.com)**
+Optional demo accounts:
 
-## Contributing
+| Role | Email |
+| --- | --- |
+| Admin LMS | lms.admin@example.com |
+| Instructor | mentor@example.com |
+| Student | student@example.com |
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+Demo seeding includes three published courses, twelve lessons, assessments, assignments, learner progress, and an issued certificate. Disable demo accounts from User management when they are no longer needed. Generated local provisioning passwords are stored in `.env`; they must never be committed.
 
-## Code of Conduct
+## Operating the academy
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+1. Create a category and course. Assign an instructor and certificate template.
+2. Add ordered chapters and lessons, then assessments/questions and assignments.
+3. Publish the course. Students can enroll, or an administrator can create an enrollment.
+4. Review assignments under **Submission review**. View learners and completion in **Reports & analytics**.
+5. Certificates issue automatically once eligibility is met. Public verification uses `/verify/{token}` or a certificate number entered at `/verify`.
 
-## Security Vulnerabilities
+Lesson text is rendered as escaped plain text. Embed URLs are restricted to YouTube and Vimeo hosts. Uploads use MIME validation; lesson and assignment files are stored privately and downloaded through authorized routes. Thumbnails alone use public storage.
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+Live lessons link to an external meeting provider; the LMS does not host video conferences. Short-answer scoring uses exact matching, not manual grading or AI. PDF templates support heading, message, accent color and signatory rather than an arbitrary HTML editor. The Organization role currently uses the student learning experience; company billing and group administration are not included.
 
-## License
+## Verification and Git
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+No tests were created and no test suites were run for this implementation. Deployment verification is limited to migrations, Blade compilation, route registration, asset compilation, PHP syntax and certificate rendering. Full interactive acceptance and mail delivery verification remain deployment responsibilities.
+
+All commits must use **Deni Afrizal <deniafrizal2904@gmail.com>**, with no co-author lines.

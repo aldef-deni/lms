@@ -1,0 +1,1 @@
+@extends('layouts.app') @section('title','Course Q&A') @section('content')<div class="page-head"><div><h1>Course conversations</h1><p>{{ $course->title }}</p></div></div><div class="card pad">@include('learning.discussion-list')</div>@endsection

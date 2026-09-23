@@ -3,6 +3,8 @@
 namespace App\Providers;
 
 use App\Models\Setting;
+use App\Models\User;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\View;
 use Illuminate\Support\ServiceProvider;
 
@@ -12,6 +14,8 @@ class AppServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        Gate::before(fn (User $user) => $user->hasRole('Super Admin') ? true : null);
+
         View::composer(['layouts.*', 'certificates.pdf'], function ($view) {
             $settings = Setting::whereIn('key', ['app_name', 'logo_path', 'contact_email'])->pluck('value', 'key');
             $view->with(['brandName' => $settings['app_name'] ?? 'ALDEF LMS', 'brandLogo' => $settings['logo_path'] ?? 'assets/logo/aldef-landscape02.png', 'contactEmail' => $settings['contact_email'] ?? 'hello@aldeftech.com']);

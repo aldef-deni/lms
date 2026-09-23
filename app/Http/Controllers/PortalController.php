@@ -41,6 +41,32 @@ class PortalController extends Controller
     public function dashboard(Request $r)
     {
         $u = $r->user();
+        $dashboardType = $u->role;
+        if ($u->isCorporateAdmin()) {
+            abort_unless($u->organization_id, 403, 'Akun Corporate Admin belum terhubung ke organisasi.');
+            $memberIds = User::where('organization_id', $u->organization_id)->pluck('id');
+            $enrollments = Enrollment::with('user', 'course.instructor', 'certificate')->whereIn('user_id', $memberIds)->latest()->get();
+            $courseIds = $enrollments->pluck('course_id')->unique();
+            $stats = [
+                'Organization members' => $memberIds->count(),
+                'Active enrollments' => $enrollments->where('status', 'active')->count(),
+                'Completed courses' => $enrollments->where('status', 'completed')->count(),
+                'Certificates' => Certificate::whereIn('enrollment_id', $enrollments->pluck('id'))->count(),
+            ];
+            $announcements = Announcement::whereNull('course_id')->orWhereIn('course_id', $courseIds)->latest()->take(5)->get();
+            $managedCourses = collect();
+            $activities = collect();
+            $deadlines = collect();
+            $pending = 0;
+            $summary = [
+                'Organization' => $u->organizationRecord?->name ?? 'Not configured',
+                'Students' => User::where('organization_id', $u->organization_id)->where('role', 'student')->count(),
+                'Courses accessed' => $courseIds->count(),
+            ];
+            $growth = collect();
+
+            return view('dashboard', compact('dashboardType', 'stats', 'enrollments', 'announcements', 'managedCourses', 'activities', 'deadlines', 'pending', 'summary', 'growth'));
+        }
         $courses = Course::query()->when(! $u->isAdmin(), fn ($q) => $q->where('instructor_id', $u->id));
         $enrollments = Enrollment::with('course.instructor', 'certificate')->where('user_id', $u->id)->latest()->get();
         if ($u->canTeach()) {
@@ -75,14 +101,29 @@ class PortalController extends Controller
             }
         }
 
-        return view('dashboard', compact('stats', 'enrollments', 'announcements', 'managedCourses', 'activities', 'deadlines', 'pending', 'summary', 'growth'));
+        return view('dashboard', compact('dashboardType', 'stats', 'enrollments', 'announcements', 'managedCourses', 'activities', 'deadlines', 'pending', 'summary', 'growth'));
     }
 
     public function reports(Request $r)
     {
-        abort_unless($r->user()->canTeach(), 403);
-        $courses = Course::with('instructor')->withCount(['lessons', 'enrollments', 'enrollments as completed_count' => fn ($q) => $q->where('status', 'completed')])->when(! $r->user()->isAdmin(), fn ($q) => $q->where('instructor_id', $r->user()->id))->get();
-        $enrollments = Enrollment::with('user', 'course', 'certificate')->whereIn('course_id', $courses->pluck('id'))->latest()->paginate(25);
+        $user = $r->user();
+        abort_unless($user->canAny(['reports.view', 'reports.view-own', 'reports.view-organization']), 403);
+        $organizationId = $user->organization_id;
+        $courses = Course::with('instructor')->withCount([
+            'lessons',
+            'enrollments' => fn ($q) => $q->when($user->isCorporateAdmin(), fn ($q) => $q->whereHas('user', fn ($q) => $q->where('organization_id', $organizationId))),
+            'enrollments as completed_count' => fn ($q) => $q->where('status', 'completed')->when($user->isCorporateAdmin(), fn ($q) => $q->whereHas('user', fn ($q) => $q->where('organization_id', $organizationId))),
+        ]);
+        if ($user->hasRole('Instructor')) {
+            $courses->where('instructor_id', $user->id);
+        } elseif ($user->isCorporateAdmin()) {
+            abort_unless($user->organization_id, 403);
+            $courses->whereHas('enrollments.user', fn ($q) => $q->where('organization_id', $user->organization_id));
+        }
+        $courses = $courses->get();
+        $enrollments = Enrollment::with('user', 'course', 'certificate')->whereIn('course_id', $courses->pluck('id'))
+            ->when($user->isCorporateAdmin(), fn ($q) => $q->whereHas('user', fn ($q) => $q->where('organization_id', $user->organization_id)))
+            ->latest()->paginate(25);
 
         return view('admin.reports', compact('courses', 'enrollments'));
     }

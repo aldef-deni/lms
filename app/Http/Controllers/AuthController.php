@@ -15,18 +15,20 @@ class AuthController extends Controller
 {
     public function login(Request $r)
     {
-        $data = $r->validate(['email' => 'required|email', 'password' => 'required|string']);
-        if (! Auth::attempt([...$data, 'active' => true], $r->boolean('remember'))) {
-            return back()->withErrors(['email' => 'The credentials are incorrect or the account is inactive.'])->onlyInput('email');
+        $data = $r->validate(['login' => 'required|string|max:255', 'password' => 'required|string']);
+        $field = filter_var($data['login'], FILTER_VALIDATE_EMAIL) ? 'email' : 'username';
+        if (! Auth::attempt([$field => $data['login'], 'password' => $data['password'], 'active' => true], $r->boolean('remember'))) {
+            return back()->withErrors(['login' => 'Username/email atau password salah, atau akun tidak aktif.'])->onlyInput('login');
         } $r->session()->regenerate();
 
-        return redirect()->intended('/dashboard');
+        return redirect($r->user()->dashboardPath());
     }
 
     public function register(Request $r)
     {
         $data = $r->validate(['name' => 'required|string|max:120', 'email' => 'required|email|max:255|unique:users', 'password' => ['required', 'confirmed', \Illuminate\Validation\Rules\Password::min(10)->letters()->numbers()]]);
         $user = User::create([...$data, 'role' => 'student']);
+        $user->syncRoles('Student');
         event(new Registered($user));
         Auth::login($user);
         $r->session()->regenerate();

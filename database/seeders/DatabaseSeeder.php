@@ -20,22 +20,59 @@ use App\Services\LearningService;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Spatie\Permission\Models\Permission;
+use Spatie\Permission\Models\Role;
+use Spatie\Permission\PermissionRegistrar;
 
 class DatabaseSeeder extends Seeder
 {
     public function run(): void
     {
         DB::transaction(function () {
+            app(PermissionRegistrar::class)->forgetCachedPermissions();
+            $permissions = [
+                'dashboard.super-admin', 'dashboard.admin', 'dashboard.instructor', 'dashboard.student', 'dashboard.corporate',
+                'users.view', 'users.manage', 'roles.manage', 'permissions.manage',
+                'courses.view', 'courses.manage', 'courses.manage-own',
+                'lessons.manage', 'lessons.manage-own', 'enrollments.manage', 'enrollments.manage-organization',
+                'assessments.manage', 'assessments.manage-own', 'assessments.take',
+                'assignments.submit', 'grading.manage-own', 'progress.view-own', 'progress.view-course', 'progress.view-organization',
+                'certificates.view-own', 'certificates.manage', 'certificates.view-organization',
+                'organizations.manage', 'organizations.manage-own', 'reports.view', 'reports.view-own', 'reports.view-organization',
+                'announcements.manage', 'announcements.manage-own', 'discussions.participate', 'discussions.moderate-own',
+                'settings.manage', 'audit.view', 'profile.manage', 'learning.access',
+            ];
+            foreach ($permissions as $permission) {
+                Permission::firstOrCreate(['name' => $permission, 'guard_name' => 'web']);
+            }
+
+            $rolePermissions = [
+                'Super Admin' => $permissions,
+                'Admin LMS' => ['dashboard.admin', 'users.view', 'users.manage', 'courses.view', 'courses.manage', 'lessons.manage', 'enrollments.manage', 'assessments.manage', 'certificates.manage', 'reports.view', 'announcements.manage', 'grading.manage-own', 'progress.view-course', 'discussions.participate', 'discussions.moderate-own', 'profile.manage', 'learning.access'],
+                'Instructor' => ['dashboard.instructor', 'courses.view', 'courses.manage-own', 'lessons.manage-own', 'assessments.manage-own', 'grading.manage-own', 'progress.view-course', 'reports.view-own', 'announcements.manage-own', 'discussions.participate', 'discussions.moderate-own', 'profile.manage', 'learning.access'],
+                'Student' => ['dashboard.student', 'courses.view', 'assessments.take', 'assignments.submit', 'progress.view-own', 'certificates.view-own', 'discussions.participate', 'profile.manage', 'learning.access'],
+                'Corporate Admin' => ['dashboard.corporate', 'users.view', 'users.manage', 'courses.view', 'enrollments.manage-organization', 'progress.view-organization', 'certificates.view-organization', 'organizations.manage-own', 'reports.view-organization', 'discussions.participate', 'profile.manage', 'learning.access'],
+            ];
+            foreach ($rolePermissions as $name => $grants) {
+                Role::firstOrCreate(['name' => $name, 'guard_name' => 'web'])->syncPermissions($grants);
+            }
+
             foreach (['app_name' => 'ALDEF LMS', 'logo_path' => 'assets/logo/aldef-landscape02.png', 'contact_email' => 'hello@aldeftech.com', 'certificate_prefix' => 'ALDEF-LMS', 'contact_address' => ''] as $key => $value) {
                 Setting::firstOrCreate(['key' => $key], ['value' => $value]);
             }
-            $adminPassword = config('lms.admin_password');
-            if ($adminPassword) {
-                if (strlen($adminPassword) < 12) {
-                    throw new \RuntimeException('LMS_ADMIN_PASSWORD must contain at least 12 characters.');
-                }User::firstOrCreate(['email' => config('lms.admin_email')], ['name' => 'ALDEF Administrator', 'password' => $adminPassword, 'role' => 'super_admin', 'active' => true, 'email_verified_at' => now()]);
-            } elseif (! User::where('role', 'super_admin')->exists()) {
-                $this->command->warn('Set LMS_ADMIN_PASSWORD and run db:seed to provision the Super Admin. No default password is enabled.');
+            $adminPassword = config('lms.superadmin_password');
+            if (! $adminPassword) {
+                throw new \RuntimeException('LMS_SUPERADMIN_PASSWORD must be set in .env.');
+            }
+            if (strlen($adminPassword) < 12) {
+                throw new \RuntimeException('LMS_SUPERADMIN_PASSWORD must contain at least 12 characters.');
+            }
+            $admin = User::where('username', config('lms.superadmin_username'))->orWhere('email', config('lms.superadmin_email'))->first() ?? new User;
+            $admin->fill(['name' => 'ALDEF Super Admin', 'username' => config('lms.superadmin_username'), 'email' => config('lms.superadmin_email'), 'password' => $adminPassword, 'role' => 'super_admin', 'active' => true, 'email_verified_at' => now()])->save();
+            $admin->syncRoles('Super Admin');
+
+            foreach (User::where('id', '!=', $admin->id)->get() as $user) {
+                $user->syncRoles(User::ROLES[$user->role] ?? 'Student');
             }
             $categories = [];
             foreach (['Technology & Development', 'Design & Creativity', 'Business & Leadership'] as $name) {
@@ -54,6 +91,9 @@ class DatabaseSeeder extends Seeder
             $admin = User::firstOrCreate(['email' => 'lms.admin@example.com'], ['name' => 'Nadia Putri', 'role' => 'admin', 'password' => $demo, 'active' => true]);
             $instructor = User::firstOrCreate(['email' => 'mentor@example.com'], ['name' => 'Arif Pratama', 'role' => 'instructor', 'password' => $demo, 'active' => true, 'bio' => 'Technology mentor helping learners turn ideas into practical, useful products.']);
             $student = User::firstOrCreate(['email' => 'student@example.com'], ['name' => 'Alya Rahman', 'role' => 'student', 'password' => $demo, 'active' => true]);
+            $admin->syncRoles('Admin LMS');
+            $instructor->syncRoles('Instructor');
+            $student->syncRoles('Student');
             $titles = ['Web Development Foundations', 'Designing Better Digital Experiences', 'Leadership for Growing Teams'];
             $descriptions = ['Build a clear understanding of how websites work, from semantic HTML and responsive layouts to server-side applications. Learn to turn a simple idea into a thoughtful web experience.', 'Learn to connect user needs with clear interfaces. Explore research, visual hierarchy, and practical approaches to creating accessible digital experiences.', 'Develop the habits that help teams do meaningful work. Explore clear communication, useful feedback, and a practical approach to setting shared goals.'];
             foreach ($titles as $index => $title) {

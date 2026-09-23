@@ -5,6 +5,7 @@ use App\Http\Controllers\CertificateController;
 use App\Http\Controllers\LearningController;
 use App\Http\Controllers\ManagementController;
 use App\Http\Controllers\PortalController;
+use App\Http\Controllers\RbacController;
 use App\Http\Middleware\ActiveUser;
 use Illuminate\Support\Facades\Route;
 
@@ -25,7 +26,12 @@ Route::middleware('guest')->group(function () {
 });
 Route::middleware(['auth', ActiveUser::class])->group(function () {
     Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
-    Route::get('/dashboard', [PortalController::class, 'dashboard'])->name('dashboard');
+    Route::get('/dashboard', fn () => redirect(auth()->user()->dashboardPath()))->name('dashboard');
+    Route::get('/dashboard/super-admin', [PortalController::class, 'dashboard'])->middleware('role:Super Admin')->name('dashboard.super-admin');
+    Route::get('/dashboard/admin', [PortalController::class, 'dashboard'])->middleware('role:Admin LMS')->name('dashboard.admin');
+    Route::get('/dashboard/instructor', [PortalController::class, 'dashboard'])->middleware('role:Instructor')->name('dashboard.instructor');
+    Route::get('/dashboard/student', [PortalController::class, 'dashboard'])->middleware('role:Student')->name('dashboard.student');
+    Route::get('/dashboard/corporate', [PortalController::class, 'dashboard'])->middleware('role:Corporate Admin')->name('dashboard.corporate');
     Route::view('/profile', 'auth.profile');
     Route::put('/profile', [AuthController::class, 'profile']);
     Route::put('/profile/password', [AuthController::class, 'password'])->middleware('throttle:6,1');
@@ -33,6 +39,10 @@ Route::middleware(['auth', ActiveUser::class])->group(function () {
     Route::get('/settings', [ManagementController::class, 'settings']);
     Route::put('/settings', [ManagementController::class, 'saveSettings']);
     Route::get('/activity', [ManagementController::class, 'activity']);
+    Route::middleware('role:Super Admin')->group(function () {
+        Route::get('/rbac', [RbacController::class, 'index'])->name('rbac.index');
+        Route::put('/rbac/roles/{role}', [RbacController::class, 'update'])->name('rbac.roles.update');
+    });
     Route::get('/submissions', [ManagementController::class, 'submissions']);
     Route::put('/submissions/{submission}', [ManagementController::class, 'grade']);
     Route::get('/submissions/{submission}/file', [LearningController::class, 'submissionFile']);

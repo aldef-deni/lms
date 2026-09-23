@@ -15,7 +15,12 @@ class CertificateController extends Controller
 {
     public function index()
     {
-        $certificates = Certificate::with('enrollment.user')->when(! auth()->user()->isAdmin(), fn ($q) => $q->whereHas('enrollment', fn ($q) => $q->where('user_id', auth()->id())))->latest()->paginate(15);
+        $user = auth()->user();
+        abort_unless($user->canAny(['certificates.view-own', 'certificates.manage', 'certificates.view-organization']), 403);
+        $certificates = Certificate::with('enrollment.user')
+            ->when($user->isCorporateAdmin(), fn ($q) => $q->whereHas('enrollment.user', fn ($q) => $q->where('organization_id', $user->organization_id)))
+            ->when(! $user->isAdmin() && ! $user->isCorporateAdmin(), fn ($q) => $q->whereHas('enrollment', fn ($q) => $q->where('user_id', $user->id)))
+            ->latest()->paginate(15);
 
         return view('certificates.index', compact('certificates'));
     }
@@ -30,7 +35,8 @@ class CertificateController extends Controller
 
     public function download(Certificate $certificate)
     {
-        abort_unless(auth()->user()->isAdmin() || $certificate->enrollment->user_id === auth()->id(), 403);
+        $user = auth()->user();
+        abort_unless($user->isAdmin() || $certificate->enrollment->user_id === $user->id || ($user->isCorporateAdmin() && $certificate->enrollment->user->organization_id === $user->organization_id), 403);
         abort_if($certificate->revoked_at, 403, 'This certificate has been revoked.');
         $url = route('verify', ['token' => $certificate->verification_token]);
         $qr = (new Writer(new ImageRenderer(new RendererStyle(150), new SvgImageBackEnd)))->writeString($url);
@@ -41,7 +47,7 @@ class CertificateController extends Controller
 
     public function revoke(Certificate $certificate)
     {
-        abort_unless(auth()->user()->isAdmin(), 403);
+        abort_unless(auth()->user()->can('certificates.manage'), 403);
         $certificate->update(['revoked_at' => now()]);
         ActivityLog::create(['user_id' => auth()->id(), 'action' => 'Revoked certificate', 'subject' => $certificate->number]);
 

@@ -8,6 +8,7 @@ use App\Models\CertificateTemplate;
 use App\Models\Course;
 use App\Models\Enrollment;
 use App\Models\Lesson;
+use App\Models\Organization;
 use App\Models\Quiz;
 use App\Models\Section;
 use App\Models\Setting;
@@ -25,10 +26,18 @@ class ManagementController extends Controller
     {
         $d = ManagementResources::all()[$resource] ?? null;
         abort_unless($d, 404);
-        abort_unless(auth()->user()->canTeach(), 403);
-        if (in_array($resource, ['users', 'categories', 'certificate-templates', 'enrollments'])) {
-            abort_unless(auth()->user()->isAdmin(), 403);
-        }
+        $permissions = match ($resource) {
+            'users' => ['users.manage'],
+            'organizations' => ['organizations.manage', 'organizations.manage-own'],
+            'categories', 'courses' => ['courses.manage', 'courses.manage-own'],
+            'certificate-templates' => ['certificates.manage'],
+            'enrollments' => ['enrollments.manage', 'enrollments.manage-organization'],
+            'sections', 'lessons' => ['lessons.manage', 'lessons.manage-own'],
+            'quizzes', 'questions', 'assignments' => ['assessments.manage', 'assessments.manage-own'],
+            'announcements' => ['announcements.manage', 'announcements.manage-own'],
+            default => [],
+        };
+        abort_unless(auth()->user()->canAny($permissions), 403);
 
         return $d;
     }
@@ -37,10 +46,24 @@ class ManagementController extends Controller
     {
         [$class] = $this->definition($resource);
         $q = $class::query();
-        if (auth()->user()->isAdmin()) {
+        $user = auth()->user();
+        if ($user->hasRole('Super Admin')) {
             return $q;
         }
-        $id = auth()->id();
+        if ($user->hasRole('Admin LMS')) {
+            return $resource === 'users' ? $q->whereIn('role', ['student', 'instructor']) : $q;
+        }
+        if ($user->isCorporateAdmin()) {
+            abort_unless($user->organization_id, 403);
+
+            return match ($resource) {
+                'users' => $q->where('organization_id', $user->organization_id)->where('role', 'student'),
+                'enrollments' => $q->whereHas('user', fn ($q) => $q->where('organization_id', $user->organization_id)),
+                'organizations' => $q->whereKey($user->organization_id),
+                default => $q->whereRaw('1=0'),
+            };
+        }
+        $id = $user->id;
 
         return match ($resource) {
             'courses' => $q->where('instructor_id', $id),'sections','quizzes','assignments','announcements' => $q->whereHas('course', fn ($q) => $q->where('instructor_id', $id)),'lessons' => $q->whereHas('section.course', fn ($q) => $q->where('instructor_id', $id)),'questions' => $q->whereHas('quiz.course', fn ($q) => $q->where('instructor_id', $id)),default => $q->whereRaw('1=0')
@@ -49,15 +72,22 @@ class ManagementController extends Controller
 
     private function courseAccess(int $id): void
     {
-        abort_unless(auth()->user()->isAdmin() || Course::whereKey($id)->where('instructor_id', auth()->id())->exists(), 403);
+        $user = auth()->user();
+        abort_unless($user->isAdmin() || ($user->isCorporateAdmin() && Course::whereKey($id)->where('status', 'published')->exists()) || Course::whereKey($id)->where('instructor_id', $user->id)->exists(), 403);
     }
 
     private function options(): array
     {
-        $courses = Course::when(! auth()->user()->isAdmin(), fn ($q) => $q->where('instructor_id', auth()->id()))->get();
+        $user = auth()->user();
+        $courses = Course::when($user->hasRole('Instructor'), fn ($q) => $q->where('instructor_id', $user->id))
+            ->when($user->isCorporateAdmin(), fn ($q) => $q->where('status', 'published'))->get();
         $ids = $courses->pluck('id');
 
-        return ['courses' => $courses->pluck('title', 'id'), 'categories' => Category::pluck('name', 'id'), 'instructors' => User::whereIn('role', ['instructor', 'admin', 'super_admin'])->where('active', true)->pluck('name', 'id'), 'students' => auth()->user()->isAdmin() ? User::whereIn('role', ['student', 'corporate'])->pluck('name', 'id') : collect(), 'sections' => Section::whereIn('course_id', $ids)->get()->mapWithKeys(fn ($s) => [$s->id => $s->course->title.' / '.$s->title]), 'lessons' => Lesson::whereHas('section', fn ($q) => $q->whereIn('course_id', $ids))->pluck('title', 'id'), 'quizzes' => Quiz::whereIn('course_id', $ids)->pluck('title', 'id'), 'certificate-templates' => CertificateTemplate::pluck('name', 'id')];
+        $user = auth()->user();
+        $students = User::where('role', 'student')->when($user->isCorporateAdmin(), fn ($q) => $q->where('organization_id', $user->organization_id))->pluck('name', 'id');
+        $organizations = Organization::when($user->isCorporateAdmin(), fn ($q) => $q->whereKey($user->organization_id))->where('active', true)->pluck('name', 'id');
+
+        return ['courses' => $courses->pluck('title', 'id'), 'categories' => Category::pluck('name', 'id'), 'instructors' => User::whereIn('role', ['instructor', 'admin', 'super_admin'])->where('active', true)->pluck('name', 'id'), 'students' => $students, 'organizations' => $organizations, 'sections' => Section::whereIn('course_id', $ids)->get()->mapWithKeys(fn ($s) => [$s->id => $s->course->title.' / '.$s->title]), 'lessons' => Lesson::whereHas('section', fn ($q) => $q->whereIn('course_id', $ids))->pluck('title', 'id'), 'quizzes' => Quiz::whereIn('course_id', $ids)->pluck('title', 'id'), 'certificate-templates' => CertificateTemplate::pluck('name', 'id')];
     }
 
     public function index(Request $r, string $resource)
@@ -88,6 +118,7 @@ class ManagementController extends Controller
     public function form(string $resource, ?int $id = null)
     {
         [$class,$title,$fields] = $this->definition($resource);
+        abort_if($resource === 'organizations' && auth()->user()->isCorporateAdmin() && ! $id, 403);
         $record = $id ? $this->scoped($resource)->findOrFail($id) : new $class;
         if (! $record->exists) {
             $record->fill(match ($resource) {
@@ -102,9 +133,10 @@ class ManagementController extends Controller
             });
         }
         $options = $this->options();
-        if ($resource === 'users' && auth()->user()->role !== 'super_admin') {
-            $fields['role'] = array_intersect_key(User::ROLES, array_flip(['student', 'instructor', 'corporate']));
-            abort_if($record->exists && in_array($record->role, ['super_admin', 'admin']), 403);
+        if ($resource === 'users' && ! auth()->user()->hasRole('Super Admin')) {
+            $allowedRoles = auth()->user()->isCorporateAdmin() ? ['student'] : ['student', 'instructor'];
+            $fields['role'] = array_intersect_key(User::ROLES, array_flip($allowedRoles));
+            abort_if($record->exists && ! in_array($record->role, $allowedRoles), 403);
         }
 
         return view('admin.form', compact('resource', 'title', 'fields', 'record', 'options'));
@@ -113,12 +145,14 @@ class ManagementController extends Controller
     public function save(Request $r, string $resource, ?int $id = null)
     {
         [$class,$title,$fields,$rules] = $this->definition($resource);
+        abort_if($resource === 'organizations' && auth()->user()->isCorporateAdmin() && ! $id, 403);
         $record = $id ? $this->scoped($resource)->findOrFail($id) : new $class;
         if ($resource === 'users') {
             $rules['email'] = ['required', 'email', 'max:255', Rule::unique('users')->ignore($id)];
+            $rules['username'] = ['nullable', 'alpha_dash', 'max:80', Rule::unique('users')->ignore($id)];
             $rules['password'] = $id ? 'nullable|string|min:10' : 'required|string|min:10';
         }
-        if (in_array($resource, ['categories', 'courses'])) {
+        if (in_array($resource, ['categories', 'courses', 'organizations'])) {
             $rules['slug'] = ['required', 'alpha_dash', 'max:255', Rule::unique($record->getTable())->ignore($id)];
         }
         $data = $r->validate($rules);
@@ -138,8 +172,12 @@ class ManagementController extends Controller
             abort_if($record->attempts()->exists(), 422, 'This assessment has attempt history. Create a new assessment to change its rules.');
         }
         if ($resource === 'users') {
-            if (auth()->user()->role !== 'super_admin') {
-                abort_if(in_array($record->role, ['admin', 'super_admin']) || in_array($data['role'], ['admin', 'super_admin']), 403);
+            if (! auth()->user()->hasRole('Super Admin')) {
+                $allowedRoles = auth()->user()->isCorporateAdmin() ? ['student'] : ['student', 'instructor'];
+                abort_if(($record->exists && ! in_array($record->role, $allowedRoles)) || ! in_array($data['role'], $allowedRoles), 403);
+            }
+            if (auth()->user()->isCorporateAdmin()) {
+                $data['organization_id'] = auth()->user()->organization_id;
             }
             if ($record->id === auth()->id()) {
                 abort_if(! $data['active'] || $data['role'] !== $record->role, 422, 'You cannot deactivate or change your own role.');
@@ -150,6 +188,7 @@ class ManagementController extends Controller
             if ($record->role === 'super_admin' && (! $data['active'] || $data['role'] !== 'super_admin')) {
                 abort_if(User::where('role', 'super_admin')->where('active', true)->count() <= 1, 422, 'Keep at least one active super admin.');
             }
+            abort_if($data['role'] === 'corporate' && empty($data['organization_id']), 422, 'Corporate Admin must belong to an organization.');
         }
         if (isset($data['course_id'])) {
             $this->courseAccess((int) $data['course_id']);
@@ -185,7 +224,11 @@ class ManagementController extends Controller
             }
         }
         if ($resource === 'enrollments') {
-            abort_unless(User::whereKey($data['user_id'])->whereIn('role', ['student', 'corporate'])->exists(), 422);
+            $student = User::whereKey($data['user_id'])->where('role', 'student');
+            if (auth()->user()->isCorporateAdmin()) {
+                $student->where('organization_id', auth()->user()->organization_id);
+            }
+            abort_unless($student->exists(), 422);
             abort_if(Enrollment::where('user_id', $data['user_id'])->where('course_id', $data['course_id'])->when($id, fn ($q) => $q->where('id', '!=', $id))->exists(), 422, 'This learner is already enrolled.');
             if ($record->exists) {
                 abort_if($record->user_id != $data['user_id'] || $record->course_id != $data['course_id'] || $record->status === 'completed', 422, 'Completed enrollments and enrollment ownership cannot be changed.');
@@ -210,6 +253,9 @@ class ManagementController extends Controller
         }
         DB::transaction(function () use ($record, $data, $resource) {
             $record->fill($data)->save();
+            if ($resource === 'users') {
+                $record->syncRoles(User::ROLES[$record->role]);
+            }
             ActivityLog::create(['user_id' => auth()->id(), 'action' => 'Saved '.$resource, 'subject' => (string) $record->id]);
         });
 
@@ -219,6 +265,7 @@ class ManagementController extends Controller
     public function destroy(string $resource, int $id)
     {
         $record = $this->scoped($resource)->findOrFail($id);
+        abort_if($resource === 'organizations' && auth()->user()->isCorporateAdmin(), 403);
         if ($resource === 'quizzes') {
             abort_if($record->attempts()->exists(), 422, 'Assessments with attempt history cannot be deleted.');
         }
@@ -232,9 +279,9 @@ class ManagementController extends Controller
             $course = $resource === 'sections' ? $record->course : $record->section->course;
             abort_if($course->enrollments()->exists(), 422, 'Curriculum with enrolled learners cannot be deleted. You may edit its content.');
         }
-        abort_unless(auth()->user()->isAdmin() || ! in_array($resource, ['users', 'enrollments']), 403);
+        abort_unless(auth()->user()->can('users.manage') || ! in_array($resource, ['users', 'enrollments']), 403);
         if ($resource === 'users') {
-            abort_if($record->id === auth()->id() || $record->role === 'super_admin' || (auth()->user()->role !== 'super_admin' && $record->role === 'admin'), 403);
+            abort_if($record->id === auth()->id() || $record->role === 'super_admin' || (! auth()->user()->hasRole('Super Admin') && in_array($record->role, ['admin', 'corporate'])), 403);
             abort_if($record->courses()->exists() || $record->enrollments()->exists(), 422, 'Deactivate users with learning history instead.');
         }
         if ($resource === 'courses') {
@@ -276,14 +323,14 @@ class ManagementController extends Controller
 
     public function settings()
     {
-        abort_unless(auth()->user()->isAdmin(), 403);
+        abort_unless(auth()->user()->can('settings.manage'), 403);
 
         return view('admin.settings', ['settings' => Setting::pluck('value', 'key')]);
     }
 
     public function saveSettings(Request $r)
     {
-        abort_unless($r->user()->role === 'super_admin', 403);
+        abort_unless($r->user()->can('settings.manage'), 403);
         $data = $r->validate(['app_name' => 'required|string|max:100', 'logo_path' => ['required', 'regex:~^/?assets/[a-zA-Z0-9/_.-]+\.(png|jpg|webp)$~', 'not_regex:~\.\.~'], 'contact_email' => 'required|email', 'certificate_prefix' => 'required|alpha_dash|max:30', 'contact_address' => 'nullable|string|max:1000']);
         foreach ($data as $key => $value) {
             Setting::updateOrCreate(['key' => $key], ['value' => $value]);
@@ -295,7 +342,7 @@ class ManagementController extends Controller
 
     public function activity()
     {
-        abort_unless(auth()->user()->isAdmin(), 403);
+        abort_unless(auth()->user()->can('audit.view'), 403);
 
         return view('admin.activity', ['logs' => ActivityLog::with('user')->latest()->paginate(30)]);
     }

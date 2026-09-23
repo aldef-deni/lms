@@ -26,7 +26,7 @@ class LearningController extends Controller
     public function enroll(Course $course)
     {
         abort_unless($course->status === 'published', 404);
-        abort_unless(in_array(auth()->user()->role, ['student', 'corporate']), 403);
+        abort_unless(auth()->user()->hasRole('Student'), 403);
         $e = Enrollment::firstOrCreate(['user_id' => auth()->id(), 'course_id' => $course->id]);
         abort_if($e->status === 'cancelled', 403, 'Contact your administrator to reactivate enrollment.');
 

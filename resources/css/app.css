@@ -1,6 +1,7 @@
 @import 'tailwindcss';
 @import './courses.css';
 @import './auth-portals.css';
+@import './profile.css';
 @source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
 @source '../**/*.blade.php';
 @source '../**/*.js';

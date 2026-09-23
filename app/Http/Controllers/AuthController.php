@@ -79,7 +79,12 @@ class AuthController extends Controller
 
     public function profile(Request $r)
     {
-        $data = $r->validate(['name' => 'required|string|max:120', 'email' => ['required', 'email', 'max:255', Rule::unique('users')->ignore($r->user()->id)], 'bio' => 'nullable|string|max:2000', 'organization' => 'nullable|string|max:255']);
+        $data = $r->validate(['name' => 'required|string|max:120', 'email' => ['required', 'email', 'max:255', Rule::unique('users')->ignore($r->user()->id)], 'bio' => 'nullable|string|max:2000', 'organization' => 'nullable|string|max:255', 'avatar' => 'nullable|image|mimes:jpg,jpeg,png,webp|max:5120']);
+        if ($r->hasFile('avatar')) {
+            $data['avatar'] = $r->file('avatar')->store('avatars', 'public');
+        } else {
+            unset($data['avatar']);
+        }
         if ($data['email'] !== $r->user()->email) {
             $data['email_verified_at'] = null;
         } $r->user()->forceFill($data)->save();

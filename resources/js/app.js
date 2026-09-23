@@ -70,4 +70,17 @@ document.addEventListener('DOMContentLoaded', () => {
    if (hasInk) output.value = canvas.toDataURL('image/png');
   });
  });
+
+ const avatarInput = document.querySelector('[data-avatar-input]');
+ avatarInput?.addEventListener('change', () => {
+  const file = avatarInput.files?.[0];
+  if (!file || !file.type.startsWith('image/')) return;
+  const previewUrl = URL.createObjectURL(file);
+  document.querySelectorAll('[data-avatar-preview]').forEach(preview => {
+   const image = document.createElement('img');
+   image.src = previewUrl;
+   image.alt = 'New profile photo preview';
+   preview.replaceChildren(image);
+  });
+ });
 });

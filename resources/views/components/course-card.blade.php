@@ -25,7 +25,7 @@
         <h3><a href="{{ route('courses.show', $course->slug) }}">{{ $course->title }}</a></h3>
         <p>{{ Str::limit($course->description, 118) }}</p>
         <div class="course-card-footer">
-            <span class="instructor-chip"><span class="avatar">{{ mb_substr($course->instructor->name, 0, 1) }}</span><span><small>Instructor</small><strong>{{ $course->instructor->name }}</strong></span></span>
+            <span class="instructor-chip"><x-user-avatar :user="$course->instructor" :size="34" /><span><small>Instructor</small><strong>{{ $course->instructor->name }}</strong></span></span>
             <a class="course-arrow" href="{{ route('courses.show', $course->slug) }}" aria-label="Explore {{ $course->title }}"><x-icon name="arrow" /></a>
         </div>
     </div>

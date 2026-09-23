@@ -16,7 +16,7 @@
             <h1>{{ $course->title }}</h1>
             <p>{{ Str::limit($course->description, 260) }}</p>
             <div class="course-instructor">
-                <span class="avatar">{{ mb_substr($course->instructor->name, 0, 1) }}</span>
+                <x-user-avatar :user="$course->instructor" />
                 <span><small>Guided by</small><strong>{{ $course->instructor->name }}</strong></span>
             </div>
         </div>

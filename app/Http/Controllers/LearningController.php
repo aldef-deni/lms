@@ -20,6 +20,8 @@ class LearningController extends Controller
 {
     private function enrollment(Course $course): Enrollment
     {
+        abort_if((bool) $course->is_demo !== (bool) auth()->user()->is_demo, 404);
+
         return Enrollment::where('course_id', $course->id)->where('user_id', auth()->id())->whereIn('status', ['active', 'completed'])->firstOrFail();
     }
 
@@ -27,6 +29,7 @@ class LearningController extends Controller
     {
         abort_unless($course->status === 'published', 404);
         abort_unless(auth()->user()->hasRole('Student'), 403);
+        abort_if((bool) $course->is_demo !== (bool) auth()->user()->is_demo, 404);
         $e = Enrollment::firstOrCreate(['user_id' => auth()->id(), 'course_id' => $course->id]);
         abort_if($e->status === 'cancelled', 403, 'Contact your administrator to reactivate enrollment.');
 
@@ -71,6 +74,7 @@ class LearningController extends Controller
     public function material(Lesson $lesson)
     {
         $course = $lesson->section->course;
+        abort_if(auth()->check() && (bool) $course->is_demo !== (bool) auth()->user()->is_demo, 404);
         if (! ($lesson->preview && $course->status === 'published') && ! auth()->user()?->isAdmin() && auth()->id() !== $course->instructor_id) {
             $this->enrollment($course);
         }
@@ -162,6 +166,7 @@ class LearningController extends Controller
 
     public function submissionFile(Submission $submission)
     {
+        abort_if((bool) $submission->assignment->course->is_demo !== (bool) auth()->user()->is_demo, 404);
         abort_unless(auth()->id() === $submission->user_id || auth()->user()->isAdmin() || auth()->id() === $submission->assignment->course->instructor_id, 403);
         abort_unless($submission->file && Storage::disk('local')->exists($submission->file), 404);
 
@@ -170,6 +175,7 @@ class LearningController extends Controller
 
     public function discuss(Request $r, Course $course)
     {
+        abort_if((bool) $course->is_demo !== (bool) $r->user()->is_demo, 404);
         if (! $r->user()->isAdmin() && $r->user()->id !== $course->instructor_id) {
             $this->enrollment($course);
         }
@@ -183,6 +189,7 @@ class LearningController extends Controller
 
     public function discussions(Course $course)
     {
+        abort_if((bool) $course->is_demo !== (bool) auth()->user()->is_demo, 404);
         abort_unless(auth()->user()->isAdmin() || auth()->id() === $course->instructor_id, 403);
         $discussions = Discussion::with('user', 'replies')->where('course_id', $course->id)->whereNull('parent_id')->latest()->paginate(20);
 

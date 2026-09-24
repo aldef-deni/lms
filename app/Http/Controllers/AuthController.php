@@ -61,6 +61,7 @@ class AuthController extends Controller
     {
         $r->validate(['token' => 'required', 'email' => 'required|email', 'password' => ['required', 'confirmed', \Illuminate\Validation\Rules\Password::min(10)->letters()->numbers()]]);
         $status = Password::reset($r->only('email', 'password', 'password_confirmation', 'token'), function (User $user, string $password) {
+            abort_if($user->is_demo, 403, 'Demo account passwords are restored automatically.');
             $user->forceFill(['password' => $password, 'remember_token' => Str::random(60)])->save();
             event(new PasswordReset($user));
         });
@@ -94,6 +95,7 @@ class AuthController extends Controller
 
     public function password(Request $r)
     {
+        abort_if($r->user()->is_demo, 403, 'Demo account passwords are fixed and restored automatically.');
         $data = $r->validate(['current_password' => 'required|current_password', 'password' => ['required', 'confirmed', \Illuminate\Validation\Rules\Password::min(10)->letters()->numbers()]]);
         $r->user()->update(['password' => $data['password'], 'remember_token' => Str::random(60)]);
         $r->session()->regenerate();

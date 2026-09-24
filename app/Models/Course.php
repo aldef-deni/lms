@@ -8,7 +8,7 @@ class Course extends Model
 {
     protected $guarded = ['id'];
 
-    protected $casts = ['featured' => 'boolean'];
+    protected $casts = ['featured' => 'boolean', 'is_demo' => 'boolean'];
 
     public function category()
     {

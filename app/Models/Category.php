@@ -8,6 +8,8 @@ class Category extends Model
 {
     protected $guarded = ['id'];
 
+    protected $casts = ['is_demo' => 'boolean'];
+
     public function parent()
     {
         return $this->belongsTo(self::class, 'parent_id');

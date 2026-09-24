@@ -33,7 +33,7 @@
         <div class="profile-actions"><button class="btn">Save profile <x-icon name="arrow" /></button></div>
     </form>
 
-    <form class="card profile-form security-card" method="POST" action="/profile/password">
+    @unless(auth()->user()->is_demo)<form class="card profile-form security-card" method="POST" action="/profile/password">
         @csrf @method('PUT')
         <div class="profile-card-head"><div><span class="eyebrow" style="color:#7771cc">ACCOUNT SECURITY</span><h2>Update password</h2></div><span class="profile-step">02</span></div>
         <div class="security-note"><span><x-icon name="settings" /></span><p><strong>Keep your account protected.</strong> Use a unique password with a mix of letters and numbers.</p></div>
@@ -43,6 +43,6 @@
             @endforeach
         </div>
         <div class="profile-actions"><button class="btn secondary">Update password</button></div>
-    </form>
+    </form>@endunless
 </div>
 @endsection

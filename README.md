@@ -37,20 +37,33 @@ Set these private environment variables before seeding:
 ```dotenv
 LMS_ADMIN_EMAIL=admin@aldeftech.com
 LMS_ADMIN_PASSWORD=<unique password of at least 12 characters>
-LMS_DEMO_PASSWORD=<optional unique password of at least 12 characters>
 ```
 
-The main seeder creates accounts only when the corresponding password is provided. Rerunning it preserves existing passwords and records. There is no publicly known default password. Run `php artisan config:clear` after changing provisioning variables, then `php artisan db:seed --force`.
+The main seeder creates the Super Admin only when its private password is configured. Run `php artisan config:clear` after changing provisioning variables, then `php artisan db:seed --force`.
 
-Optional demo accounts:
+### Demo accounts and automatic reset
 
-| Role | Email |
-| --- | --- |
-| Admin LMS | lms.admin@example.com |
-| Instructor | mentor@example.com |
-| Student | student@example.com |
+Create or restore the isolated demo workspace with:
 
-Demo seeding includes three published courses, twelve lessons, assessments, assignments, learner progress, and an issued certificate. Disable demo accounts from User management when they are no longer needed. Generated local provisioning passwords are stored in `.env`; they must never be committed.
+```sh
+php artisan db:seed --class=Database\\Seeders\\DemoAccountSeeder --force
+```
+
+| Role | Username | Password |
+| --- | --- | --- |
+| Admin LMS | `admindemo` | `admindemo` |
+| Instructor | `instructordemo` | `instructordemo` |
+| Student | `studentdemo` | `studentdemo` |
+
+All three users carry the `users.is_demo` flag. Demo-owned courses, learning history, quiz attempts, assignment submissions, discussions, grading, certificates, uploads, activity, and profile changes are cleared and reseeded by `php artisan demo:reset`. Production users and production-owned data are outside the demo query scope.
+
+The Laravel scheduler registers `demo:reset` with `daily()` and prevents overlapping runs. Add this cron task in aaPanel so Laravel can dispatch it:
+
+```cron
+* * * * * cd /www/wwwroot/lms.aldeftech.com && php artisan schedule:run >> /dev/null 2>&1
+```
+
+The cron expression runs the scheduler every minute; the reset command itself executes only once per day according to the application timezone.
 
 ## Operating the academy
 

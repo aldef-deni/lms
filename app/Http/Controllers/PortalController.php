@@ -21,18 +21,20 @@ class PortalController extends Controller
 {
     public function home()
     {
-        return view('home', ['courses' => Course::with('instructor', 'category')->withCount('lessons', 'enrollments')->where('status', 'published')->orderByDesc('featured')->latest()->take(3)->get(), 'courseCount' => Course::where('status', 'published')->count(), 'studentCount' => User::where('role', 'student')->count()]);
+        return view('home', ['courses' => Course::with('instructor', 'category')->withCount('lessons', 'enrollments')->where('status', 'published')->where('is_demo', false)->orderByDesc('featured')->latest()->take(3)->get(), 'courseCount' => Course::where('status', 'published')->where('is_demo', false)->count(), 'studentCount' => User::where('role', 'student')->where('is_demo', false)->count()]);
     }
 
     public function catalog(Request $r)
     {
-        $courses = Course::with('instructor', 'category')->withCount('lessons', 'enrollments')->where('status', 'published')->when($r->q, fn ($q) => $q->where('title', 'like', '%'.$r->q.'%'))->when($r->category, fn ($q) => $q->where('category_id', $r->category))->when($r->level, fn ($q) => $q->where('level', $r->level))->orderByDesc('featured')->latest()->paginate(12)->withQueryString();
+        $demo = $r->user()?->is_demo ?? false;
+        $courses = Course::with('instructor', 'category')->withCount('lessons', 'enrollments')->where('status', 'published')->where('is_demo', $demo)->when($r->q, fn ($q) => $q->where('title', 'like', '%'.$r->q.'%'))->when($r->category, fn ($q) => $q->where('category_id', $r->category))->when($r->level, fn ($q) => $q->where('level', $r->level))->orderByDesc('featured')->latest()->paginate(12)->withQueryString();
 
-        return view('courses.catalog', compact('courses') + ['categories' => Category::all()]);
+        return view('courses.catalog', compact('courses') + ['categories' => Category::where('is_demo', $demo)->get()]);
     }
 
     public function course(Course $course)
     {
+        abort_if($course->is_demo !== (auth()->user()?->is_demo ?? false), 404);
         abort_unless($course->status === 'published' || auth()->user()?->isAdmin() || auth()->id() === $course->instructor_id, 404);
         $course->load('sections.lessons', 'instructor', 'category')->loadCount('lessons', 'enrollments', 'quizzes', 'assignments');
         $enrollment = auth()->check() ? Enrollment::where('course_id', $course->id)->where('user_id', auth()->id())->first() : null;
@@ -69,7 +71,7 @@ class PortalController extends Controller
 
             return view('dashboard', compact('dashboardType', 'stats', 'enrollments', 'announcements', 'managedCourses', 'activities', 'deadlines', 'pending', 'summary', 'growth'));
         }
-        $courses = Course::query()->when(! $u->isAdmin(), fn ($q) => $q->where('instructor_id', $u->id));
+        $courses = Course::where('is_demo', $u->is_demo)->when(! $u->isAdmin(), fn ($q) => $q->where('instructor_id', $u->id));
         $enrollments = Enrollment::with('course.instructor', 'certificate')->where('user_id', $u->id)->latest()->get();
         if ($u->canTeach()) {
             $ids = (clone $courses)->pluck('id');
@@ -77,9 +79,11 @@ class PortalController extends Controller
         } else {
             $stats = ['Enrolled courses' => $enrollments->count(), 'In progress' => $enrollments->where('status', 'active')->count(), 'Completed' => $enrollments->where('status', 'completed')->count(), 'Certificates' => Certificate::whereIn('enrollment_id', $enrollments->pluck('id'))->count()];
         }
-        $announcements = Announcement::whereNull('course_id')->orWhereIn('course_id', $u->canTeach() ? $courses->pluck('id') : $enrollments->pluck('course_id'))->latest()->take(5)->get();
+        $announcements = Announcement::where(function ($query) use ($u, $courses, $enrollments) {
+            $query->whereNull('course_id')->orWhereIn('course_id', $u->canTeach() ? $courses->pluck('id') : $enrollments->pluck('course_id'));
+        })->whereHas('user', fn ($userQuery) => $userQuery->where('is_demo', $u->is_demo))->latest()->take(5)->get();
         $managedCourses = $u->canTeach() ? (clone $courses)->withCount('enrollments', 'lessons')->latest()->take(6)->get() : collect();
-        $activities = $u->isAdmin() ? ActivityLog::with('user')->latest()->take(6)->get() : collect();
+        $activities = $u->isAdmin() ? ActivityLog::with('user')->whereIn('user_id', User::where('is_demo', $u->is_demo)->select('id'))->latest()->take(6)->get() : collect();
         $deadlines = Assignment::whereIn('course_id', $enrollments->pluck('course_id'))->where('due_at', '>=', now())->orderBy('due_at')->take(5)->get();
         $pending = $u->canTeach() ? Submission::whereHas('assignment', fn ($q) => $q->whereIn('course_id', $courses->pluck('id')))->where('status', 'submitted')->count()
             + QuizAttempt::whereHas('quiz', fn ($q) => $q->whereIn('course_id', $courses->pluck('id')))->where('grading_status', 'pending')->count() : 0;
@@ -96,7 +100,7 @@ class PortalController extends Controller
                 'Completed lessons' => LessonCompletion::whereIn('enrollment_id', Enrollment::whereIn('course_id', $ids)->select('id'))->count(),
             ];
             if ($u->isAdmin()) {
-                $summary = ['Registered students' => User::where('role', 'student')->count(), 'Instructors' => User::where('role', 'instructor')->count()] + $summary;
+                $summary = ['Registered students' => User::where('role', 'student')->where('is_demo', $u->is_demo)->count(), 'Instructors' => User::where('role', 'instructor')->where('is_demo', $u->is_demo)->count()] + $summary;
             }
             for ($month = 5; $month >= 0; $month--) {
                 $start = now()->startOfMonth()->subMonths($month);
@@ -117,6 +121,7 @@ class PortalController extends Controller
             'enrollments' => fn ($q) => $q->when($user->isCorporateAdmin(), fn ($q) => $q->whereHas('user', fn ($q) => $q->where('organization_id', $organizationId))),
             'enrollments as completed_count' => fn ($q) => $q->where('status', 'completed')->when($user->isCorporateAdmin(), fn ($q) => $q->whereHas('user', fn ($q) => $q->where('organization_id', $organizationId))),
         ]);
+        $courses->where('is_demo', $user->is_demo);
         if ($user->hasRole('Instructor')) {
             $courses->where('instructor_id', $user->id);
         } elseif ($user->isCorporateAdmin()) {

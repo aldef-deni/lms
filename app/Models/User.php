@@ -11,13 +11,13 @@ class User extends Authenticatable
 {
     use HasFactory, HasRoles, Notifiable;
 
-    protected $fillable = ['name', 'username', 'email', 'password', 'role', 'organization_id', 'active', 'bio', 'avatar', 'organization'];
+    protected $fillable = ['name', 'username', 'email', 'password', 'role', 'organization_id', 'active', 'is_demo', 'bio', 'avatar', 'organization'];
 
     protected $hidden = ['password', 'remember_token'];
 
     protected function casts(): array
     {
-        return ['email_verified_at' => 'datetime', 'password' => 'hashed', 'active' => 'boolean'];
+        return ['email_verified_at' => 'datetime', 'password' => 'hashed', 'active' => 'boolean', 'is_demo' => 'boolean'];
     }
 
     public const ROLES = ['super_admin' => 'Super Admin', 'admin' => 'Admin LMS', 'instructor' => 'Instructor', 'student' => 'Student', 'corporate' => 'Corporate Admin'];

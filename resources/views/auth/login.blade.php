@@ -20,6 +20,15 @@
     <button class="btn">{{ $isManagement ? 'Enter management workspace' : 'Sign in to learning' }} →</button>
 </form>
 
+<div class="card pad" style="margin-top:20px;text-align:left">
+    <span class="badge amber">Demo Account</span>
+    @if($isManagement)
+        <p class="muted" style="margin-top:10px;font-size:12px">Admin LMS: <strong>admindemo</strong> / <strong>admindemo</strong></p>
+    @else
+        <p class="muted" style="margin-top:10px;font-size:12px">Instructor: <strong>instructordemo</strong> / <strong>instructordemo</strong><br>Student: <strong>studentdemo</strong> / <strong>studentdemo</strong></p>
+    @endif
+</div>
+
 <div class="portal-switch">
     @if($isManagement)
         <span>Instructor or Student?</span><a href="/login">Go to learning login →</a>

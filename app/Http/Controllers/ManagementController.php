@@ -29,6 +29,7 @@ class ManagementController extends Controller
     {
         $d = ManagementResources::all()[$resource] ?? null;
         abort_unless($d, 404);
+        abort_if(auth()->user()->is_demo && in_array($resource, ['users', 'organizations'], true), 403, 'Demo accounts cannot manage users or organizations.');
         $permissions = match ($resource) {
             'users' => ['users.manage'],
             'organizations' => ['organizations.manage', 'organizations.manage-own'],
@@ -50,6 +51,26 @@ class ManagementController extends Controller
         [$class] = $this->definition($resource);
         $q = $class::query();
         $user = auth()->user();
+        if ($user->is_demo) {
+            return match ($resource) {
+                'categories', 'courses', 'certificate-templates' => $q->where('is_demo', true),
+                'enrollments' => $q->whereHas('user', fn ($query) => $query->where('is_demo', true))->whereHas('course', fn ($query) => $query->where('is_demo', true)),
+                'sections', 'quizzes', 'assignments' => $q->whereHas('course', fn ($query) => $query->where('is_demo', true)),
+                'lessons' => $q->whereHas('section.course', fn ($query) => $query->where('is_demo', true)),
+                'questions' => $q->whereHas('quiz.course', fn ($query) => $query->where('is_demo', true)),
+                'announcements' => $q->whereHas('user', fn ($query) => $query->where('is_demo', true)),
+                default => $q->whereRaw('1=0'),
+            };
+        }
+        $q = match ($resource) {
+            'users', 'categories', 'courses', 'certificate-templates' => $q->where('is_demo', false),
+            'enrollments' => $q->whereHas('user', fn ($query) => $query->where('is_demo', false))->whereHas('course', fn ($query) => $query->where('is_demo', false)),
+            'sections', 'quizzes', 'assignments' => $q->whereHas('course', fn ($query) => $query->where('is_demo', false)),
+            'lessons' => $q->whereHas('section.course', fn ($query) => $query->where('is_demo', false)),
+            'questions' => $q->whereHas('quiz.course', fn ($query) => $query->where('is_demo', false)),
+            'announcements' => $q->whereHas('user', fn ($query) => $query->where('is_demo', false)),
+            default => $q,
+        };
         if ($user->hasRole('Super Admin')) {
             return $q;
         }
@@ -76,21 +97,31 @@ class ManagementController extends Controller
     private function courseAccess(int $id): void
     {
         $user = auth()->user();
-        abort_unless($user->isAdmin() || ($user->isCorporateAdmin() && Course::whereKey($id)->where('status', 'published')->exists()) || Course::whereKey($id)->where('instructor_id', $user->id)->exists(), 403);
+        if ($user->is_demo) {
+            $course = Course::whereKey($id)->where('is_demo', true);
+            if (! $user->isAdmin()) {
+                $course->where('instructor_id', $user->id);
+            }
+            abort_unless($course->exists(), 403);
+
+            return;
+        }
+        $course = Course::whereKey($id)->where('is_demo', false);
+        abort_unless((clone $course)->exists() && ($user->isAdmin() || ($user->isCorporateAdmin() && (clone $course)->where('status', 'published')->exists()) || (clone $course)->where('instructor_id', $user->id)->exists()), 403);
     }
 
     private function options(): array
     {
         $user = auth()->user();
-        $courses = Course::when($user->hasRole('Instructor'), fn ($q) => $q->where('instructor_id', $user->id))
+        $courses = Course::where('is_demo', $user->is_demo)->when($user->hasRole('Instructor'), fn ($q) => $q->where('instructor_id', $user->id))
             ->when($user->isCorporateAdmin(), fn ($q) => $q->where('status', 'published'))->get();
         $ids = $courses->pluck('id');
 
         $user = auth()->user();
-        $students = User::where('role', 'student')->when($user->isCorporateAdmin(), fn ($q) => $q->where('organization_id', $user->organization_id))->pluck('name', 'id');
+        $students = User::where('role', 'student')->where('is_demo', $user->is_demo)->when($user->isCorporateAdmin(), fn ($q) => $q->where('organization_id', $user->organization_id))->pluck('name', 'id');
         $organizations = Organization::when($user->isCorporateAdmin(), fn ($q) => $q->whereKey($user->organization_id))->where('active', true)->pluck('name', 'id');
 
-        return ['courses' => $courses->pluck('title', 'id'), 'categories' => Category::pluck('name', 'id'), 'instructors' => User::whereIn('role', ['instructor', 'admin', 'super_admin'])->where('active', true)->pluck('name', 'id'), 'students' => $students, 'organizations' => $organizations, 'sections' => Section::whereIn('course_id', $ids)->get()->mapWithKeys(fn ($s) => [$s->id => $s->course->title.' / '.$s->title]), 'lessons' => Lesson::whereHas('section', fn ($q) => $q->whereIn('course_id', $ids))->pluck('title', 'id'), 'quizzes' => Quiz::whereIn('course_id', $ids)->pluck('title', 'id'), 'certificate-templates' => CertificateTemplate::pluck('name', 'id')];
+        return ['courses' => $courses->pluck('title', 'id'), 'categories' => Category::where('is_demo', $user->is_demo)->pluck('name', 'id'), 'instructors' => User::whereIn('role', ['instructor', 'admin', 'super_admin'])->where('active', true)->where('is_demo', $user->is_demo)->pluck('name', 'id'), 'students' => $students, 'organizations' => $organizations, 'sections' => Section::whereIn('course_id', $ids)->get()->mapWithKeys(fn ($s) => [$s->id => $s->course->title.' / '.$s->title]), 'lessons' => Lesson::whereHas('section', fn ($q) => $q->whereIn('course_id', $ids))->pluck('title', 'id'), 'quizzes' => Quiz::whereIn('course_id', $ids)->pluck('title', 'id'), 'certificate-templates' => CertificateTemplate::where('is_demo', $user->is_demo)->pluck('name', 'id')];
     }
 
     public function index(Request $r, string $resource)
@@ -159,6 +190,18 @@ class ManagementController extends Controller
             $rules['slug'] = ['required', 'alpha_dash', 'max:255', Rule::unique($record->getTable())->ignore($id)];
         }
         $data = $r->validate($rules);
+        if ($r->user()->is_demo && in_array($resource, ['categories', 'courses', 'certificate-templates'], true)) {
+            $data['is_demo'] = true;
+        }
+        if ($resource === 'courses') {
+            $demoScope = (bool) $r->user()->is_demo;
+            abort_if((bool) User::whereKey($data['instructor_id'])->value('is_demo') !== $demoScope, 422, 'Course and instructor must belong to the same data scope.');
+            abort_if(! empty($data['category_id']) && (bool) Category::whereKey($data['category_id'])->value('is_demo') !== $demoScope, 422, 'Course and category must belong to the same data scope.');
+            abort_if(! empty($data['certificate_template_id']) && (bool) CertificateTemplate::whereKey($data['certificate_template_id'])->value('is_demo') !== $demoScope, 422, 'Course and certificate template must belong to the same data scope.');
+        }
+        if ($resource === 'categories' && ! empty($data['parent_id'])) {
+            abort_if((bool) Category::whereKey($data['parent_id'])->value('is_demo') !== (bool) $r->user()->is_demo, 422, 'Parent category must belong to the same data scope.');
+        }
         // Keep learning history attached to its original curriculum.
         if ($record->exists) {
             $parentField = match ($resource) {
@@ -251,6 +294,7 @@ class ManagementController extends Controller
                 $student->where('organization_id', auth()->user()->organization_id);
             }
             abort_unless($student->exists(), 422);
+            abort_if((bool) User::whereKey($data['user_id'])->value('is_demo') !== (bool) Course::whereKey($data['course_id'])->value('is_demo'), 422, 'Demo users may only enroll in demo courses.');
             abort_if(Enrollment::where('user_id', $data['user_id'])->where('course_id', $data['course_id'])->when($id, fn ($q) => $q->where('id', '!=', $id))->exists(), 422, 'This learner is already enrolled.');
             if ($record->exists) {
                 abort_if($record->user_id != $data['user_id'] || $record->course_id != $data['course_id'] || $record->status === 'completed', 422, 'Completed enrollments and enrollment ownership cannot be changed.');
@@ -344,8 +388,8 @@ class ManagementController extends Controller
     public function submissions()
     {
         abort_unless(auth()->user()->canTeach(), 403);
-        $submissions = Submission::with('user', 'assignment.course')->when(! auth()->user()->isAdmin(), fn ($q) => $q->whereHas('assignment.course', fn ($q) => $q->where('instructor_id', auth()->id())))->latest()->paginate(20);
-        $essayAttempts = QuizAttempt::with('user', 'quiz.course', 'quiz.questions')->where('grading_status', 'pending')
+        $submissions = Submission::with('user', 'assignment.course')->whereHas('assignment.course', fn ($q) => $q->where('is_demo', auth()->user()->is_demo))->when(! auth()->user()->isAdmin(), fn ($q) => $q->whereHas('assignment.course', fn ($q) => $q->where('instructor_id', auth()->id())))->latest()->paginate(20);
+        $essayAttempts = QuizAttempt::with('user', 'quiz.course', 'quiz.questions')->where('grading_status', 'pending')->whereHas('quiz.course', fn ($q) => $q->where('is_demo', auth()->user()->is_demo))
             ->when(! auth()->user()->isAdmin(), fn ($q) => $q->whereHas('quiz.course', fn ($q) => $q->where('instructor_id', auth()->id())))
             ->latest()->paginate(10, ['*'], 'essay_page');
 
@@ -397,6 +441,7 @@ class ManagementController extends Controller
 
     public function settings()
     {
+        abort_if(auth()->user()->is_demo, 403, 'Demo accounts cannot change system settings.');
         abort_unless(auth()->user()->can('settings.manage'), 403);
 
         return view('admin.settings', ['settings' => Setting::pluck('value', 'key')]);
@@ -404,6 +449,7 @@ class ManagementController extends Controller
 
     public function saveSettings(Request $r)
     {
+        abort_if($r->user()->is_demo, 403, 'Demo accounts cannot change system settings.');
         abort_unless($r->user()->can('settings.manage'), 403);
         $data = $r->validate(['app_name' => 'required|string|max:100', 'logo_path' => ['required', 'regex:~^/?assets/[a-zA-Z0-9/_.-]+\.(png|jpg|webp)$~', 'not_regex:~\.\.~'], 'contact_email' => 'required|email', 'certificate_prefix' => 'required|alpha_dash|max:30', 'contact_address' => 'nullable|string|max:1000']);
         foreach ($data as $key => $value) {
@@ -418,6 +464,6 @@ class ManagementController extends Controller
     {
         abort_unless(auth()->user()->can('audit.view'), 403);
 
-        return view('admin.activity', ['logs' => ActivityLog::with('user')->latest()->paginate(30)]);
+        return view('admin.activity', ['logs' => ActivityLog::with('user')->when(auth()->user()->is_demo, fn ($q) => $q->whereIn('user_id', User::where('is_demo', true)->select('id')))->latest()->paginate(30)]);
     }
 }

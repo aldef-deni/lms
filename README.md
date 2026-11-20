@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="https://lms.aldeftech.com" target="_blank">
+  <a href="https://lms.aldef.tech" target="_blank">
     <img src="public/assets/logo/aldef-landscape02.png" width="520" alt="Logo Aldef Tech">
   </a>
 </p>
@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://lms.aldeftech.com"><img src="https://img.shields.io/badge/Website-lms.aldeftech.com-0ea5e9?style=flat-square" alt="Website ALDEF LMS"></a>
+  <a href="https://lms.aldef.tech"><img src="https://img.shields.io/badge/Website-lms.aldef.tech-0ea5e9?style=flat-square" alt="Website ALDEF LMS"></a>
   <img src="https://img.shields.io/badge/Laravel-12-FF2D20?style=flat-square&logo=laravel&logoColor=white" alt="Laravel 12">
   <img src="https://img.shields.io/badge/PHP-8.2%2B-777BB4?style=flat-square&logo=php&logoColor=white" alt="PHP 8.2 atau lebih baru">
   <img src="https://img.shields.io/badge/Tailwind_CSS-4-06B6D4?style=flat-square&logo=tailwindcss&logoColor=white" alt="Tailwind CSS 4">
@@ -60,7 +60,7 @@ php artisan storage:link
 php artisan optimize
 ```
 
-Pertahankan `.env` dan `APP_KEY` yang sudah ada. Atur `APP_NAME="ALDEF LMS"`, `APP_URL=https://lms.aldeftech.com`, `APP_ENV=production`, `APP_DEBUG=false`, kredensial MySQL, dan cookie sesi HTTPS. Gunakan mail transport sungguhan agar email reset password terkirim. Pastikan `storage/` dan `bootstrap/cache/` dapat ditulis oleh PHP, dan batasi akses ke `.env`.
+Pertahankan `.env` dan `APP_KEY` yang sudah ada. Atur `APP_NAME="ALDEF LMS"`, `APP_URL=https://lms.aldef.tech`, `APP_ENV=production`, `APP_DEBUG=false`, kredensial MySQL, dan cookie sesi HTTPS. Gunakan mail transport sungguhan agar email reset password terkirim. Pastikan `storage/` dan `bootstrap/cache/` dapat ditulis oleh PHP, dan batasi akses ke `.env`.
 
 ### Akun Super Admin
 
@@ -88,7 +88,7 @@ php artisan db:seed --class=Database\\Seeders\\DemoAccountSeeder --force
 Seluruh data milik akun demo dibersihkan dan diisi ulang oleh `php artisan demo:reset`, yang dijadwalkan sekali sehari oleh Laravel scheduler. Tambahkan cron berikut di aaPanel:
 
 ```cron
-* * * * * cd /www/wwwroot/lms.aldeftech.com && php artisan schedule:run >> /dev/null 2>&1
+* * * * * cd /www/wwwroot/lms.aldef.tech && php artisan schedule:run >> /dev/null 2>&1
 ```
 
 ## Alur Penggunaan

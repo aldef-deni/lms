@@ -22,3 +22,8 @@
 Homestead.json
 Homestead.yaml
 Thumbs.db
+
+# Server logs and test/backup files
+error_log
+/check-mb.php
+.htaccess.backup

@@ -15,7 +15,9 @@
 @endcanany
 @canany(['users.manage','enrollments.manage','enrollments.manage-organization','organizations.manage','organizations.manage-own'])
 <div class="navlabel">{{ auth()->user()->isCorporateAdmin()?'ORGANIZATION':'ADMINISTRATION' }}</div>
-@can('users.manage')@unless(auth()->user()->is_demo)<a class="sidelink {{ request()->is('manage/users*')?'active':'' }}" href="/manage/users"><x-icon name="users"/>{{ auth()->user()->isCorporateAdmin()?'Organization members':'User management' }}</a>@endunless@endcan
+@can('users.manage')
+@unless(auth()->user()->is_demo)<a class="sidelink {{ request()->is('manage/users*')?'active':'' }}" href="/manage/users"><x-icon name="users"/>{{ auth()->user()->isCorporateAdmin()?'Organization members':'User management' }}</a>@endunless
+@endcan
 @canany(['enrollments.manage','enrollments.manage-organization'])<a class="sidelink {{ request()->is('manage/enrollments*')?'active':'' }}" href="/manage/enrollments"><x-icon name="grid"/>Enrollments</a>@endcanany
 @canany(['organizations.manage','organizations.manage-own'])<a class="sidelink {{ request()->is('manage/organizations*')?'active':'' }}" href="/manage/organizations"><x-icon name="grid"/>Organization</a>@endcanany
 @can('courses.manage')<a class="sidelink {{ request()->is('manage/categories*')?'active':'' }}" href="/manage/categories"><x-icon name="grid"/>Categories</a>@endcan
